@@ -1,0 +1,55 @@
+# =====================
+# OS
+# =====================
+.DS_Store
+
+# =====================
+# Python
+# =====================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# =====================
+# Node / Frontend
+# =====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =====================
+# Build output
+# =====================
+dist/
+build/
+
+# =====================
+# Environment variables
+# =====================
+.env
+.env.*
+!.env.example
+
+# =====================
+# Vite / Cache
+# =====================
+.vite
+
+# =====================
+# Docker
+# =====================
+*.log
+
+# =====================
+# IDE
+# =====================
+.vscode/
+.idea/
+
