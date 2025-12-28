@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, parseCurrencyInputToBase, formatInputNumberFromBase } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -112,8 +112,8 @@ export default function SavingsPage() {
         tanggal: item.tanggal,
         jenis: item.jenis,
         namaAkun: item.namaAkun,
-        setoran: item.setoran.toString(),
-        penarikan: item.penarikan.toString(),
+        setoran: formatInputNumberFromBase(item.setoran),
+        penarikan: formatInputNumberFromBase(item.penarikan),
         catatan: item.catatan,
       });
     } else {
@@ -132,8 +132,8 @@ export default function SavingsPage() {
       return;
     }
 
-    const setoran = parseFloat(formData.setoran.replace(/[^\d]/g, '') || '0');
-    const penarikan = parseFloat(formData.penarikan.replace(/[^\d]/g, '') || '0');
+    const setoran = formData.setoran ? parseCurrencyInputToBase(formData.setoran) : 0;
+    const penarikan = formData.penarikan ? parseCurrencyInputToBase(formData.penarikan) : 0;
 
     if (setoran === 0 && penarikan === 0) {
       toast({

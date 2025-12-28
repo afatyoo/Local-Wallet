@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
+import { useCurrencyStore, SUPPORTED_CURRENCIES } from '@/stores/currencyStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useBackup } from '@/hooks/useBackup';
 import { useTranslation, languages } from '@/lib/i18n';
@@ -24,6 +25,8 @@ import {
   Palette,
   Globe,
   RefreshCw,
+  Coins,
+  Clock,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -40,6 +43,13 @@ export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { t, language, setLanguage } = useTranslation();
   const { getLocalBackupInfo, restoreFromLocalStorage, updateLastBackupDate } = useBackup();
+  const displayCurrency = useCurrencyStore((s) => s.displayCurrency);
+  const setDisplayCurrency = useCurrencyStore((s) => s.setDisplayCurrency);
+  const lastRatesUpdated = useCurrencyStore((s) => s.lastUpdated);
+  const isRatesRefreshing = useCurrencyStore((s) => s.isRefreshing);
+  const ratesError = useCurrencyStore((s) => s.error);
+  const refreshRates = useCurrencyStore((s) => s.refreshRates);
+
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -166,7 +176,7 @@ export default function SettingsPage() {
               {t('settings_language')}
             </CardTitle>
             <CardDescription>
-              Choose your preferred language
+              {t('settings_language_description')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -219,6 +229,79 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+
+        {/* Currency */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Coins className="w-5 h-5 text-primary" />
+              {t('settings_currency')}
+            </CardTitle>
+            <CardDescription>
+              {t('settings_currency_desc')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('settings_currency_display')}</Label>
+              <Select
+                value={displayCurrency}
+                onValueChange={(value) => {
+                  setDisplayCurrency(value as any);
+                  if (value !== 'IDR') {
+                    refreshRates();
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={t('settings_currency_display')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4" />
+                <span>{t('settings_currency_base')}: IDR</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                <span>
+                  {t('settings_currency_last_update')}: {lastRatesUpdated ? new Date(lastRatesUpdated).toLocaleString() : '-'}
+                </span>
+              </div>
+            </div>
+
+            {ratesError && (
+              <div className="text-sm text-destructive flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                <span>{ratesError}</span>
+              </div>
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => refreshRates({ force: true })}
+              disabled={isRatesRefreshing}
+              className="w-fit"
+            >
+              {isRatesRefreshing ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              {t('settings_currency_refresh')}
+            </Button>
+          </CardContent>
+        </Card>
         {/* Info Card */}
         <Card className="bg-primary/5 border-primary/20">
           <CardHeader>

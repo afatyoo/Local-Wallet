@@ -230,7 +230,7 @@ export default function ReportsPage() {
                   Preview Data
                 </CardTitle>
                 <CardDescription>
-                  {selectedPeriod === 'all' ? 'Semua periode' : getMonthName(selectedPeriod)}
+                  {getMonthName(selectedPeriod)}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

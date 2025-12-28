@@ -4,11 +4,18 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "prebuild": "npm run i18n:auto",
     "build": "vite build",
+    "prebuild:dev": "npm run i18n:auto",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "i18n:auto": "node scripts/i18n-auto.mjs",
+    "i18n:sync": "node scripts/i18n-sync.mjs",
+    "i18n:translate": "node scripts/i18n-translate.mjs",
+    "i18n:translate:openai": "TRANSLATE_PROVIDER=openai node scripts/i18n-translate.mjs",
+    "i18n:translate:libre": "TRANSLATE_PROVIDER=libretranslate node scripts/i18n-translate.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

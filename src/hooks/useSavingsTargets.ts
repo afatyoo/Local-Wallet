@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useFinanceStore } from '@/stores/financeStore';
+import { formatCurrency } from '@/lib/utils';
 import { differenceInMonths, parseISO, format } from 'date-fns';
 
 export interface SavingsTarget {
@@ -141,7 +142,7 @@ export function useSavingsTargets() {
         insights.push({
           targetId: target.id,
           targetName: target.namaTarget,
-          message: `Butuh Rp ${target.monthlyRequired.toLocaleString('id-ID')}/bulan untuk mencapai "${target.namaTarget}" tepat waktu`,
+          message: `Butuh ${formatCurrency(target.monthlyRequired)}/bulan untuk mencapai "${target.namaTarget}" tepat waktu`,
           type: 'info',
         });
       }

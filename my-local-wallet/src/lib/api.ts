@@ -1,7 +1,36 @@
 // API client for MySQL backend
-// Configure this to point to your backend server
+// Configure this to point to your backend server.
+//
+// Why this exists:
+// - When you open the app from another device (or from an online preview),
+//   `http://localhost:3001` points to *that device*, not your server.
+// - In production, the safest default is **same-origin**: `${window.location.origin}/api`.
+// - In local development, default to `http://localhost:3001/api`.
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+function normalizeBaseUrl(base: string): string {
+  // Remove trailing slashes so `${base}${endpoint}` behaves predictably
+  return base.replace(/\/+$/, '');
+}
+
+function resolveApiBaseUrl(): string {
+  const fromEnv = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (fromEnv) return normalizeBaseUrl(fromEnv);
+
+  // Vite exposes DEV/PROD flags
+  if (import.meta.env.DEV) {
+    return 'http://localhost:3001/api';
+  }
+
+  // Production default: same-origin
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/api`;
+  }
+
+  // Last resort
+  return '/api';
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 interface ApiResponse<T> {
   data?: T;

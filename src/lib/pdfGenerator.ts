@@ -47,7 +47,7 @@ export function generateFinanceReport(data: ReportData) {
   yPos += 10;
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
-  const periodText = selectedMonth === 'all' ? 'Semua Periode' : getMonthName(selectedMonth);
+  const periodText = getMonthName(selectedMonth);
   doc.text(`Periode: ${periodText}`, pageWidth / 2, yPos, { align: 'center' });
   
   yPos += 7;

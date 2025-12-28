@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
+import { useCurrencyStore } from '@/stores/currencyStore';
 import { useTranslation } from '@/lib/i18n';
 import { useBackup } from '@/hooks/useBackup';
 import { cn, generateDynamicMonthOptions } from '@/lib/utils';
@@ -44,6 +45,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { selectedMonth, setSelectedMonth, incomes, expenses, budgets, savings, bills, billPayments } = useFinanceStore();
   const { t } = useTranslation();
   const { autoSaveToLocalStorage } = useBackup();
+  const refreshRates = useCurrencyStore((s) => s.refreshRates);
+
+  // Auto refresh exchange rates (cached)
+  useEffect(() => {
+    refreshRates();
+  }, [refreshRates]);
+
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   
   // Dynamic month options based on actual transaction data

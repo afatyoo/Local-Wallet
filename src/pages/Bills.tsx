@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
-import { formatCurrency, getMonthName } from '@/lib/utils';
+import { formatCurrency, getMonthName, parseCurrencyInputToBase, formatInputNumberFromBase } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -177,7 +177,7 @@ export default function BillsPage() {
       setFormData({
         nama: bill.nama,
         kategori: bill.kategori,
-        jumlah: bill.jumlah.toString(),
+        jumlah: formatInputNumberFromBase(bill.jumlah),
         tanggalJatuhTempo: bill.tanggalJatuhTempo.toString(),
         mulaiDari: bill.mulaiDari,
         sampaiDengan: bill.sampaiDengan === 'ongoing' ? '' : bill.sampaiDengan,
@@ -198,13 +198,22 @@ export default function BillsPage() {
       const billData = {
         nama: formData.nama.trim(),
         kategori: formData.kategori,
-        jumlah: parseFloat(formData.jumlah),
+        jumlah: parseCurrencyInputToBase(formData.jumlah),
         tanggalJatuhTempo: parseInt(formData.tanggalJatuhTempo),
         mulaiDari: formData.mulaiDari,
         sampaiDengan: formData.isOngoing ? 'ongoing' : formData.sampaiDengan,
         catatan: formData.catatan.trim(),
         isActive: true,
       };
+
+      if (!Number.isFinite(billData.jumlah) || billData.jumlah <= 0) {
+        toast({
+          title: t('common_error'),
+          description: t('common_error'),
+          variant: 'destructive',
+        });
+        return;
+      }
 
       if (editingBill) {
         await updateBill(editingBill.id, billData);

@@ -10,7 +10,7 @@ import {
 } from '@/hooks/useSavingsTargets';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, parseCurrencyInputToBase, formatInputNumberFromBase } from '@/lib/utils';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   Target, 
@@ -116,7 +116,7 @@ export default function TargetsPage() {
       setEditingTarget(target);
       setFormData({
         namaTarget: target.namaTarget,
-        targetAmount: target.targetAmount.toString(),
+        targetAmount: formatInputNumberFromBase(target.targetAmount),
         startDate: target.startDate,
         targetDate: target.targetDate,
         linkedAccount: target.linkedAccount,
@@ -137,7 +137,7 @@ export default function TargetsPage() {
       return;
     }
 
-    const targetAmount = parseFloat(formData.targetAmount.replace(/[^\d]/g, ''));
+    const targetAmount = parseCurrencyInputToBase(formData.targetAmount);
     if (isNaN(targetAmount) || targetAmount <= 0) {
       toast({
         title: t('common_error'),

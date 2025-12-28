@@ -1,4 +1,76 @@
 services:
+  libretranslate:
+    image: libretranslate/libretranslate:v1.8.3
+    ports:
+      - "127.0.0.1:5000:5000"
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    environment:
+      # Biar nggak download semua bahasa di dunia (berat).
+      # Tambahin/kurangin sesuai kebutuhan UI kamu:
+      - LT_LOAD_ONLY=en,es,fr,de,pt,ru,ar,hi,zh,ja,ko,id
+      - LT_UPDATE_MODELS=true
+      - LT_DISABLE_WEB_UI=true
+    volumes:
+      # PENTING: biar model yang udah didownload DISIMPEN, jadi start berikutnya cepet
+      - libretranslate_models:/home/libretranslate/.local
+    healthcheck:
+      # Ini cara healthcheck yang umum dipakai di container LibreTranslate
+      test: ["CMD-SHELL", "./venv/bin/python scripts/healthcheck.py"]
+      interval: 15s
+      timeout: 10s
+      retries: 80
+      start_period: 900s
+
+
+
+  # Generate runtime translation files into a named volume (one-shot).
+  # Base source-of-truth stays in src/locales/id.json.
+  i18n_bootstrap:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - locales_data:/usr/share/nginx/html/locales
+    environment:
+      BASE_FILE: /app/src/locales/id.json
+      OUT_DIR: /usr/share/nginx/html/locales
+      I18N_TARGETS: en,es,fr,de,pt,ru,ar,hi,zh,ja,ko
+      TRANSLATE_PROVIDER: libretranslate
+      LIBRETRANSLATE_URL: http://libretranslate:5000
+      LIBRE_WAIT_MAX_MS: "900000"   # 15 menit (biar aman pas download model)
+    depends_on:
+      libretranslate:
+        condition: service_healthy
+    command: ["node", "scripts/i18n-bootstrap.mjs"]
+    restart: "no"
+
+
+  # Keep translations refreshed automatically (cheap: it uses meta hashes).
+  # Interval in seconds via I18N_SYNC_INTERVAL (default: 3600).
+  i18n_watcher:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - locales_data:/usr/share/nginx/html/locales
+    environment:
+      BASE_FILE: /app/src/locales/id.json
+      OUT_DIR: /usr/share/nginx/html/locales
+      I18N_TARGETS: en,es,fr,de,pt,ru,ar,hi,zh,ja,ko
+      TRANSLATE_PROVIDER: libretranslate
+      LIBRETRANSLATE_URL: http://libretranslate:5000
+    depends_on:
+      libretranslate:
+        condition: service_healthy
+      i18n_bootstrap:
+        condition: service_completed_successfully
+    command: ["node", "scripts/i18n-auto.mjs"]
+    restart: unless-stopped
+
+
+
   mysql:
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
@@ -33,7 +105,7 @@ services:
       GRANT ALL PRIVILEGES ON $$MYSQL_DATABASE.* TO '$$MYSQL_USER'@'%';
       FLUSH PRIVILEGES;\""
     restart: "no"
-  
+
   backend:
     build:
       context: ./backend
@@ -66,12 +138,18 @@ services:
         VITE_STORAGE_MODE: db
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:80"
+    volumes:
+      # Serve locales langsung dari repo
+      - ./src/locales:/usr/share/nginx/html/locales:ro
     depends_on:
       backend:
         condition: service_healthy
+      i18n_bootstrap:
+        condition: service_completed_successfully
     restart: unless-stopped
-
-
 
 volumes:
   mysql_data:
+  locales_data:
+  libretranslate_models:
+

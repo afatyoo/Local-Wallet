@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
-import { formatCurrency, formatDate, getMonthName } from '@/lib/utils';
+import { formatCurrency, formatDate, getMonthName, parseCurrencyInputToBase, formatInputNumberFromBase } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -100,7 +100,7 @@ export default function ExpensePage() {
         nama: item.nama,
         kategori: item.kategori,
         metode: item.metode,
-        jumlah: item.jumlah.toString(),
+        jumlah: formatInputNumberFromBase(item.jumlah),
         catatan: item.catatan,
       });
     } else {
@@ -119,7 +119,7 @@ export default function ExpensePage() {
       return;
     }
 
-    const amount = parseFloat(formData.jumlah.replace(/[^\d]/g, ''));
+    const amount = parseCurrencyInputToBase(formData.jumlah);
     if (isNaN(amount) || amount <= 0) {
       toast({
         title: t('common_error'),
