@@ -395,33 +395,37 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const old = get().savings.find((s) => s.id === id);
     if (!old) return;
 
-    // 🔥 ROLLBACK OLD TRANSAKSI
-    const linkedExpense = get().expenses.find((e) => e.savingId === id);
-    const linkedIncome = get().incomes.find((i) => i.savingId === id);
+    // If no fields are provided, do nothing (avoid deleting linked transactions by accident)
+    const hasAnyField =
+      data.tanggal !== undefined ||
+      data.jenis !== undefined ||
+      data.namaAkun !== undefined ||
+      data.setoran !== undefined ||
+      data.penarikan !== undefined ||
+      data.catatan !== undefined;
 
-    if (linkedExpense) {
-      await expensesApi.delete(linkedExpense.id);
-      set((state) => ({
-        expenses: state.expenses.filter((e) => e.id !== linkedExpense.id),
-      }));
-    }
+    if (!hasAnyField) return;
 
-    if (linkedIncome) {
-      await incomesApi.delete(linkedIncome.id);
-      set((state) => ({
-        incomes: state.incomes.filter((i) => i.id !== linkedIncome.id),
-      }));
-    }
+    // 🔥 HAPUS SEMUA TRANSAKSI TERKAIT (bukan cuma 1 item)
+    const linkedExpenses = get().expenses.filter((e) => e.savingId === id);
+    const linkedIncomes = get().incomes.filter((i) => i.savingId === id);
 
-    // 🔄 UPDATE SAVING
-    const updateData: Partial<ApiSaving> = {
-      tanggal: data.tanggal,
-      jenis: data.jenis,
-      nama_akun: data.namaAkun,
-      setoran: data.setoran,
-      penarikan: data.penarikan,
-      catatan: data.catatan,
-    };
+    await Promise.all(linkedExpenses.map((e) => expensesApi.delete(e.id)));
+    await Promise.all(linkedIncomes.map((i) => incomesApi.delete(i.id)));
+
+    set((state) => ({
+      expenses: state.expenses.filter((e) => e.savingId !== id),
+      incomes: state.incomes.filter((i) => i.savingId !== id),
+    }));
+
+    // 🔄 UPDATE SAVING (hanya field yang dikirim)
+    const updateData: Partial<ApiSaving> = {};
+    if (data.tanggal !== undefined) updateData.tanggal = data.tanggal;
+    if (data.jenis !== undefined) updateData.jenis = data.jenis;
+    if (data.namaAkun !== undefined) updateData.nama_akun = data.namaAkun;
+    if (data.setoran !== undefined) updateData.setoran = data.setoran;
+    if (data.penarikan !== undefined) updateData.penarikan = data.penarikan;
+    if (data.catatan !== undefined) updateData.catatan = data.catatan;
 
     const res = await savingsApi.update(id, updateData);
     if (!res.data) return;
@@ -432,29 +436,61 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       savings: state.savings.map((s) => (s.id === id ? updatedSaving : s)),
     }));
 
-    // ➕ BUAT TRANSAKSI BARU
-    await get().addSaving(updatedSaving.userId, {
-      tanggal: updatedSaving.tanggal,
-      jenis: updatedSaving.jenis,
-      namaAkun: updatedSaving.namaAkun,
-      setoran: updatedSaving.setoran,
-      penarikan: updatedSaving.penarikan,
-      catatan: updatedSaving.catatan,
-    });
+    // ✅ RE-CREATE transaksi linked TANPA bikin saving baru
+    const bulan = getMonthFromDate(updatedSaving.tanggal);
+    const userId = updatedSaving.userId;
+
+    // 🔻 SETORAN → EXPENSE (POTONG BALANCE)
+    if (updatedSaving.setoran > 0) {
+      const expenseRes = await expensesApi.create({
+        user_id: userId,
+        tanggal: updatedSaving.tanggal,
+        bulan,
+        nama: `Setoran ${updatedSaving.jenis} - ${updatedSaving.namaAkun}`,
+        kategori: updatedSaving.jenis,
+        metode: 'Transfer',
+        jumlah: updatedSaving.setoran,
+        catatan: updatedSaving.catatan,
+        saving_id: updatedSaving.id, // 🔗 LINK ke saving yang sama
+      });
+
+      if (expenseRes.data) {
+        set((state) => ({
+          expenses: [...state.expenses, convertToFrontend.expense(expenseRes.data!)],
+        }));
+      }
+    }
+
+    // 🔺 PENARIKAN → INCOME (NABAH BALANCE)
+    if (updatedSaving.penarikan > 0) {
+      const incomeRes = await incomesApi.create({
+        user_id: userId,
+        tanggal: updatedSaving.tanggal,
+        bulan,
+        sumber: `Penarikan ${updatedSaving.jenis} - ${updatedSaving.namaAkun}`,
+        kategori: updatedSaving.jenis,
+        metode: 'Transfer',
+        jumlah: updatedSaving.penarikan,
+        catatan: updatedSaving.catatan,
+        saving_id: updatedSaving.id, // 🔗 LINK ke saving yang sama
+      });
+
+      if (incomeRes.data) {
+        set((state) => ({
+          incomes: [...state.incomes, convertToFrontend.income(incomeRes.data!)],
+        }));
+      }
+    }
   },
 
 
   deleteSaving: async (id) => {
-    const linkedExpense = get().expenses.find((e) => e.savingId === id);
-    const linkedIncome = get().incomes.find((i) => i.savingId === id);
+    // Hapus semua transaksi yang ter-link ke saving ini (biar nggak nyisa kalau pernah duplicate)
+    const linkedExpenses = get().expenses.filter((e) => e.savingId === id);
+    const linkedIncomes = get().incomes.filter((i) => i.savingId === id);
 
-    if (linkedExpense) {
-      await expensesApi.delete(linkedExpense.id);
-    }
-
-    if (linkedIncome) {
-      await incomesApi.delete(linkedIncome.id);
-    }
+    await Promise.all(linkedExpenses.map((e) => expensesApi.delete(e.id)));
+    await Promise.all(linkedIncomes.map((i) => incomesApi.delete(i.id)));
 
     await savingsApi.delete(id);
 

@@ -83,7 +83,23 @@ export default function Dashboard() {
     [monthlyExpenses]
   );
 
-  const netBalance = totalIncome - totalExpense;
+  const runningBalance = useMemo(() => {
+    if (selectedMonth === 'all') {
+      const allIncome = incomes.reduce((sum, i) => sum + i.jumlah, 0);
+      const allExpense = expenses.reduce((sum, e) => sum + e.jumlah, 0);
+      return allIncome - allExpense;
+    }
+
+    const incomeToMonth = incomes
+      .filter((i) => i.bulan && i.bulan <= selectedMonth)
+      .reduce((sum, i) => sum + i.jumlah, 0);
+
+    const expenseToMonth = expenses
+      .filter((e) => e.bulan && e.bulan <= selectedMonth)
+      .reduce((sum, e) => sum + e.jumlah, 0);
+
+    return incomeToMonth - expenseToMonth;
+  }, [incomes, expenses, selectedMonth]);
 
   const totalSavings = useMemo(
     () => savings.reduce((sum, s) => sum + s.setoran - s.penarikan, 0),
@@ -105,12 +121,13 @@ export default function Dashboard() {
     });
 
     return Object.entries(months)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6)
       .map(([month, data]) => ({
         name: getMonthName(month).split(' ')[0],
         [t('nav_income')]: data.income,
         [t('nav_expense')]: data.expense,
-      }))
-      .slice(-6);
+      }));
   }, [incomes, expenses, t]);
 
   // Pie chart data - expense categories
@@ -213,7 +230,7 @@ export default function Dashboard() {
           />
           <StatCard
             title={t('dashboard_balance')}
-            value={netBalance}
+            value={runningBalance}
             icon={Wallet}
             variant="balance"
           />
