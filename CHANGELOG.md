@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased]
+## [1.1.0] - 2025-03-25
 
 ### Added
 - **Auto-switch to latest month**: When viewing Income or Expense pages with "All Period" selected, the app automatically switches to the most recent month with data (prevents blank screens).
@@ -22,6 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Report UI localization**: Changed report page UI and generated PDFs to use English as default language for better internationalization.
 
 ---
+
+## [Unreleased]
+
 
 ## [1.0.0] — Initial Release
 
