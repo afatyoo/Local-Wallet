@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { useTranslation } from '@/lib/i18n';
@@ -38,7 +38,7 @@ import { Expense } from '@/stores/financeStore';
 
 export default function ExpensePage() {
   const { user } = useAuthStore();
-  const { expenses, masterData, selectedMonth, loadAllData, addExpense, updateExpense, deleteExpense } = useFinanceStore();
+  const { expenses, masterData, selectedMonth, setSelectedMonth, loadAllData, addExpense, updateExpense, deleteExpense } = useFinanceStore();
   const { t } = useTranslation();
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -57,6 +57,21 @@ export default function ExpensePage() {
       loadAllData(user.id);
     }
   }, [user?.id, loadAllData]);
+
+  // Auto-switch to latest month when on 'all' and data loads
+  const hasAutoSwitched = useRef(false);
+  useEffect(() => {
+    if (hasAutoSwitched.current) return;
+    if (selectedMonth === 'all' && expenses.length > 0) {
+      const months = [...new Set(expenses.map(e => e.bulan))];
+      if (months.length > 0) {
+        months.sort();
+        const latestMonth = months[months.length - 1];
+        setSelectedMonth(latestMonth);
+        hasAutoSwitched.current = true;
+      }
+    }
+  }, [expenses, selectedMonth, setSelectedMonth]);
 
   const categories = useMemo(
     () => masterData.filter((m) => m.type === 'kategoriPengeluaran').map((m) => m.value),

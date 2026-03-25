@@ -9,7 +9,7 @@ services:
     environment:
       # Biar nggak download semua bahasa di dunia (berat).
       # Tambahin/kurangin sesuai kebutuhan UI kamu:
-      - LT_LOAD_ONLY=en,es,fr,de,pt,ru,ar,hi,zh,ja,ko,id
+      - LT_LOAD_ONLY=en,id
       - LT_UPDATE_MODELS=true
       - LT_DISABLE_WEB_UI=true
     volumes:
@@ -36,7 +36,7 @@ services:
     environment:
       BASE_FILE: /app/src/locales/id.json
       OUT_DIR: /usr/share/nginx/html/locales
-      I18N_TARGETS: en,es,fr,de,pt,ru,ar,hi,zh,ja,ko
+      I18N_TARGETS: en
       TRANSLATE_PROVIDER: libretranslate
       LIBRETRANSLATE_URL: http://libretranslate:5000
       LIBRE_WAIT_MAX_MS: "900000"   # 15 menit (biar aman pas download model)
@@ -58,7 +58,7 @@ services:
     environment:
       BASE_FILE: /app/src/locales/id.json
       OUT_DIR: /usr/share/nginx/html/locales
-      I18N_TARGETS: en,es,fr,de,pt,ru,ar,hi,zh,ja,ko
+      I18N_TARGETS: en
       TRANSLATE_PROVIDER: libretranslate
       LIBRETRANSLATE_URL: http://libretranslate:5000
     depends_on:
@@ -81,6 +81,8 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3307:3306"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s

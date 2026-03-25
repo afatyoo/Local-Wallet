@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { AppLayout } from '@/components/AppLayout';
 import { generateFinanceReport } from '@/lib/pdfGenerator';
+import { generateExcelReport } from '@/lib/excelExport';
 import { getMonthName, generateMonthOptions } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,9 +16,9 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { 
-  FileText, 
-  Download, 
+import {
+  FileText,
+  Download,
   Loader2,
   FileSpreadsheet,
   Calendar,
@@ -37,7 +38,7 @@ export default function ReportsPage() {
     budget: true,
     categoryBreakdown: true,
   });
-  
+
   const monthOptions = generateMonthOptions();
 
   useEffect(() => {
@@ -48,13 +49,13 @@ export default function ReportsPage() {
 
   const handleGeneratePDF = async () => {
     if (!user) return;
-    
+
     setIsGenerating(true);
-    
+
     try {
       // Small delay for UX
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       generateFinanceReport({
         incomes: includeOptions.income ? incomes : [],
         expenses: includeOptions.expense ? expenses : [],
@@ -63,15 +64,49 @@ export default function ReportsPage() {
         selectedMonth: selectedPeriod,
         username: user.username,
       });
-      
+
       toast({
-        title: 'Berhasil',
-        description: 'Laporan PDF berhasil diunduh',
+        title: 'Success',
+        description: 'PDF report has been downloaded',
       });
     } catch (error) {
+      console.error('PDF generation error:', error);
       toast({
         title: 'Error',
-        description: 'Gagal membuat laporan PDF',
+        description: error instanceof Error ? error.message : 'Failed to generate PDF report',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateExcel = async () => {
+    if (!user) return;
+
+    setIsGenerating(true);
+
+    try {
+      // Small delay for UX
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      generateExcelReport({
+        incomes: includeOptions.income ? incomes : [],
+        expenses: includeOptions.expense ? expenses : [],
+        budgets: includeOptions.budget ? budgets : [],
+        selectedMonth: selectedPeriod,
+        username: user.username,
+      });
+
+      toast({
+        title: 'Success',
+        description: 'Excel report has been downloaded',
+      });
+    } catch (error) {
+      console.error('Excel generation error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to generate Excel report',
         variant: 'destructive',
       });
     } finally {
@@ -85,7 +120,7 @@ export default function ReportsPage() {
       expenses: selectedPeriod === 'all' ? expenses : expenses.filter(e => e.bulan === selectedPeriod),
       budgets: selectedPeriod === 'all' ? budgets : budgets.filter(b => b.bulan === selectedPeriod),
     };
-    
+
     return {
       incomeCount: filtered.incomes.length,
       expenseCount: filtered.expenses.length,
@@ -102,10 +137,10 @@ export default function ReportsPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <FileText className="w-8 h-8 text-primary" />
-            Laporan
+            Reports
           </h1>
           <p className="text-muted-foreground mt-1">
-            Generate laporan keuangan dalam format PDF
+            Generate financial reports in PDF or Excel format
           </p>
         </div>
 
@@ -116,19 +151,19 @@ export default function ReportsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="w-5 h-5" />
-                  Pengaturan Laporan
+                  Report Settings
                 </CardTitle>
                 <CardDescription>
-                  Pilih periode dan jenis data yang ingin dimasukkan
+                  Select period and data to include in the report
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Period Selection */}
                 <div className="space-y-2">
-                  <Label>Periode Laporan</Label>
+                  <Label>Report Period</Label>
                   <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
                     <SelectTrigger className="w-full max-w-xs">
-                      <SelectValue placeholder="Pilih periode" />
+                      <SelectValue placeholder="Select period" />
                     </SelectTrigger>
                     <SelectContent>
                       {monthOptions.map((option) => (
@@ -142,57 +177,57 @@ export default function ReportsPage() {
 
                 {/* Include Options */}
                 <div className="space-y-3">
-                  <Label>Data yang Dimasukkan</Label>
+                  <Label>Data to Include</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="flex items-center space-x-3 p-3 rounded-lg bg-secondary/30">
                       <Checkbox
                         id="income"
                         checked={includeOptions.income}
-                        onCheckedChange={(checked) => 
+                        onCheckedChange={(checked) =>
                           setIncludeOptions(prev => ({ ...prev, income: !!checked }))
                         }
                       />
                       <label htmlFor="income" className="text-sm font-medium cursor-pointer">
-                        Data Pemasukan
+                        Income Data
                       </label>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3 p-3 rounded-lg bg-secondary/30">
                       <Checkbox
                         id="expense"
                         checked={includeOptions.expense}
-                        onCheckedChange={(checked) => 
+                        onCheckedChange={(checked) =>
                           setIncludeOptions(prev => ({ ...prev, expense: !!checked }))
                         }
                       />
                       <label htmlFor="expense" className="text-sm font-medium cursor-pointer">
-                        Data Pengeluaran
+                        Expense Data
                       </label>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3 p-3 rounded-lg bg-secondary/30">
                       <Checkbox
                         id="budget"
                         checked={includeOptions.budget}
-                        onCheckedChange={(checked) => 
+                        onCheckedChange={(checked) =>
                           setIncludeOptions(prev => ({ ...prev, budget: !!checked }))
                         }
                       />
                       <label htmlFor="budget" className="text-sm font-medium cursor-pointer">
-                        Data Anggaran
+                        Budget Data
                       </label>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3 p-3 rounded-lg bg-secondary/30">
                       <Checkbox
                         id="categoryBreakdown"
                         checked={includeOptions.categoryBreakdown}
-                        onCheckedChange={(checked) => 
+                        onCheckedChange={(checked) =>
                           setIncludeOptions(prev => ({ ...prev, categoryBreakdown: !!checked }))
                         }
                       />
                       <label htmlFor="categoryBreakdown" className="text-sm font-medium cursor-pointer">
-                        Breakdown Kategori
+                        Category Breakdown
                       </label>
                     </div>
                   </div>
@@ -200,25 +235,48 @@ export default function ReportsPage() {
               </CardContent>
             </Card>
 
-            {/* Generate Button */}
-            <Button 
-              onClick={handleGeneratePDF} 
-              disabled={isGenerating}
-              size="lg"
-              className="w-full gap-3"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Membuat Laporan...
-                </>
-              ) : (
-                <>
-                  <Download className="w-5 h-5" />
-                  Generate PDF
-                </>
-              )}
-            </Button>
+            {/* Generate Buttons */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                onClick={handleGeneratePDF}
+                disabled={isGenerating}
+                size="lg"
+                className="flex-1 gap-3"
+                variant="default"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-5 h-5" />
+                    Export PDF
+                  </>
+                )}
+              </Button>
+
+              <Button
+                onClick={handleGenerateExcel}
+                disabled={isGenerating}
+                size="lg"
+                className="flex-1 gap-3"
+                variant="outline"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="w-5 h-5" />
+                    Export Excel
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
           {/* Preview Card */}
@@ -227,7 +285,7 @@ export default function ReportsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileSpreadsheet className="w-5 h-5" />
-                  Preview Data
+                  Data Preview
                 </CardTitle>
                 <CardDescription>
                   {getMonthName(selectedPeriod)}
@@ -238,25 +296,25 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between p-3 rounded-lg bg-income/10">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="w-4 h-4 text-income" />
-                      <span className="text-sm">Pemasukan</span>
+                      <span className="text-sm">Income</span>
                     </div>
-                    <span className="font-mono font-medium">{summary.incomeCount} data</span>
+                    <span className="font-mono font-medium">{summary.incomeCount} records</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between p-3 rounded-lg bg-expense/10">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="w-4 h-4 text-expense" />
-                      <span className="text-sm">Pengeluaran</span>
+                      <span className="text-sm">Expenses</span>
                     </div>
-                    <span className="font-mono font-medium">{summary.expenseCount} data</span>
+                    <span className="font-mono font-medium">{summary.expenseCount} records</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="w-4 h-4 text-primary" />
-                      <span className="text-sm">Anggaran</span>
+                      <span className="text-sm">Budget</span>
                     </div>
-                    <span className="font-mono font-medium">{summary.budgetCount} data</span>
+                    <span className="font-mono font-medium">{summary.budgetCount} records</span>
                   </div>
                 </div>
               </CardContent>
@@ -268,10 +326,10 @@ export default function ReportsPage() {
                 <div className="flex gap-3">
                   <FileText className="w-5 h-5 text-primary mt-0.5" />
                   <div className="text-sm">
-                    <p className="font-medium mb-1">Format Laporan</p>
+                    <p className="font-medium mb-1">Report Formats</p>
                     <p className="text-muted-foreground">
-                      Laporan akan berisi ringkasan keuangan, tabel pemasukan, 
-                      pengeluaran, anggaran, dan breakdown per kategori.
+                      Export to PDF (formatted for printing) or Excel (editable spreadsheet).
+                      Both include summary, tables, and category breakdown.
                     </p>
                   </div>
                 </div>
