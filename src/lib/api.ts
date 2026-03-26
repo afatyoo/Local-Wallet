@@ -32,6 +32,18 @@ function resolveApiBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
+// Read JWT token from Zustand persisted auth store
+function getAuthToken(): string | null {
+  try {
+    const raw = localStorage.getItem('finance-auth');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.user?.token || null;
+  } catch {
+    return null;
+  }
+}
+
 interface ApiResponse<T> {
   data?: T;
   error?: string;
@@ -42,13 +54,32 @@ async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   try {
+    const token = getAuthToken();
+
+    // Build headers safely: start with defaults, merge caller's, then add auth
+    const mergedHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> | undefined),
+    };
+    if (token) {
+      mergedHeaders['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Destructure to exclude options.headers, then spread rest + our merged headers
+    const { headers: _discardedHeaders, ...restOptions } = options;
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
+      ...restOptions,
+      headers: mergedHeaders,
     });
+
+    // Auto-logout on 401 (expired/invalid token)
+    if (response.status === 401) {
+      try {
+        localStorage.removeItem('finance-auth');
+      } catch { /* ignore */ }
+      const errorData = await response.json().catch(() => ({}));
+      return { error: errorData.error || 'Sesi habis, silakan login ulang' };
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -60,7 +91,6 @@ async function apiRequest<T>(
   } catch (error) {
     console.error('API request failed:', error);
 
-    // Common in Lovable preview: browser can’t reach your local machine’s localhost.
     return {
       error:
         `Gagal terhubung ke server (${API_BASE_URL}). ` +
@@ -73,13 +103,13 @@ async function apiRequest<T>(
 // Auth API
 export const authApi = {
   login: (username: string, password: string) =>
-    apiRequest<{ id: string; username: string; createdAt: string }>('/auth/login', {
+    apiRequest<{ id: string; username: string; role: string; createdAt: string; token: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
 
   register: (username: string, password: string) =>
-    apiRequest<{ id: string; username: string; createdAt: string }>('/auth/register', {
+    apiRequest<{ id: string; username: string; role: string; createdAt: string; token: string }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
@@ -195,6 +225,30 @@ export const savingsApi = createCrudApi<ApiSaving>('savings');
 export const masterDataApi = createCrudApi<ApiMasterData>('master_data');
 export const billsApi = createCrudApi<ApiBill>('bills');
 export const billPaymentsApi = createCrudApi<ApiBillPayment>('bill_payments');
+
+// User management API (admin only)
+export interface ApiUser {
+  id: string;
+  username: string;
+  role: 'admin' | 'user';
+  createdAt: string;
+}
+
+export const usersApi = {
+  getAll: () => apiRequest<ApiUser[]>(`/users`, {
+    method: 'GET'
+  }),
+  getById: (id: string) => apiRequest<ApiUser>(`/users/${id}`, {
+    method: 'GET'
+  }),
+  updateRole: (id: string, role: string) => apiRequest<{ message: string }>(`/users/${id}/role`, {
+    method: 'PUT',
+    body: JSON.stringify({ role })
+  }),
+  delete: (id: string) => apiRequest<{ success: boolean; message: string }>(`/users/${id}`, {
+    method: 'DELETE'
+  })
+};
 
 // Helper to convert between frontend camelCase and backend snake_case
 export const convertToFrontend = {

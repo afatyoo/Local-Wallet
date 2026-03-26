@@ -254,5 +254,6 @@
   "target_title": "Sparen Ziel",
   "target_total_target": "Gesamtziel",
   "target_updated": "Ziel erfolgreich aktualisiert",
-  "settings_language_description": "Wählen Sie eine beliebige Sprache"
+  "settings_language_description": "Wählen Sie eine beliebige Sprache",
+  "nav_user_management": "Benutzerverwaltung"
 }

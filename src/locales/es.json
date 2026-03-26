@@ -254,5 +254,6 @@
   "target_title": "Objetivo de ahorro",
   "target_total_target": "Meta total",
   "target_updated": "Objetivo actualizado con éxito",
-  "settings_language_description": "Elija cualquier idioma que desee"
+  "settings_language_description": "Elija cualquier idioma que desee",
+  "nav_user_management": "Gestión de Usuarios"
 }

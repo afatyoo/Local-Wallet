@@ -254,5 +254,6 @@
   "target_title": "Objectif d ' épargne",
   "target_total_target": "Objectif total",
   "target_updated": "Objectif mis à jour avec succès",
-  "settings_language_description": "Choisissez la langue que vous voulez"
+  "settings_language_description": "Choisissez la langue que vous voulez",
+  "nav_user_management": "Gestion des Utilisateurs"
 }

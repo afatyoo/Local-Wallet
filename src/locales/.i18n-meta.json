@@ -256,7 +256,8 @@
       "target_title": "f19abecb85e8299946ac752a7a67be34c0efd8c4",
       "target_total_target": "d3315ccc599c519e15a3f68c467c6fd32a28cf69",
       "target_updated": "592b437f23abd79a71af464642084dad623dd5b7",
-      "settings_language_description": "db63ea444b2ef78e446ad4c8fe07f9ddba8921ad"
+      "settings_language_description": "db63ea444b2ef78e446ad4c8fe07f9ddba8921ad",
+      "nav_user_management": "eff072a9ab9d3893e4bbb2a67bf5d3aef3782b7a"
     },
     "es": {
       "auth_confirm_password": "c22263b98ed50108e40e241ded9e11b3006c7cd5",

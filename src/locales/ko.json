@@ -254,5 +254,6 @@
   "target_title": "관심상품",
   "target_total_target": "총 목표",
   "target_updated": "성공적으로 업데이트",
-  "settings_language_description": "원하는 언어 선택"
+  "settings_language_description": "원하는 언어 선택",
+  "nav_user_management": "사용자 관리"
 }

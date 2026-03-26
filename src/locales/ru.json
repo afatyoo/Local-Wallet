@@ -254,5 +254,6 @@
   "target_title": "Цель экономии",
   "target_total_target": "Общая цель",
   "target_updated": "Цель успешно обновлена",
-  "settings_language_description": "Выберите любой язык, который вы хотите"
+  "settings_language_description": "Выберите любой язык, который вы хотите",
+  "nav_user_management": "Управление пользователями"
 }

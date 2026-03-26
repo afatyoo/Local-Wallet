@@ -254,5 +254,6 @@
   "target_title": "节省目标",
   "target_total_target": "共计",
   "target_updated": "目标成功更新",
-  "settings_language_description": "随便选什么语言"
+  "settings_language_description": "随便选什么语言",
+  "nav_user_management": "用户管理"
 }

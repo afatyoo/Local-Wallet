@@ -23,6 +23,7 @@ import {
   Heart,
   CalendarDays,
   Flag,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,6 +79,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [user?.id, incomes, expenses, budgets, savings, bills, billPayments, autoSaveToLocalStorage]);
 
+  const isAdmin = user?.role === 'admin';
+
   const navItems = [
     { path: '/dashboard', labelKey: 'nav_dashboard' as const, icon: LayoutDashboard },
     { path: '/income', labelKey: 'nav_income' as const, icon: ArrowUpCircle },
@@ -92,6 +95,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { path: '/reports', labelKey: 'nav_reports' as const, icon: FileText },
     { path: '/master-data', labelKey: 'nav_master_data' as const, icon: Database },
     { path: '/settings', labelKey: 'nav_settings' as const, icon: Settings },
+    ...(isAdmin ? [{ path: '/user-management', labelKey: 'nav_user_management' as const, icon: ShieldCheck }] : []),
   ];
 
   const handleLogout = () => {
