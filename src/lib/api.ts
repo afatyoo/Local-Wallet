@@ -55,17 +55,31 @@ async function apiRequest<T>(
 ): Promise<ApiResponse<T>> {
   try {
     const token = getAuthToken();
-    const headers: Record<string, string> = {
+
+    // Build headers safely: start with defaults, merge caller's, then add auth
+    const mergedHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string>),
+      ...(options.headers as Record<string, string> | undefined),
     };
     if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+      mergedHeaders['Authorization'] = `Bearer ${token}`;
     }
+
+    // Destructure to exclude options.headers, then spread rest + our merged headers
+    const { headers: _discardedHeaders, ...restOptions } = options;
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers,
-      ...options,
+      ...restOptions,
+      headers: mergedHeaders,
     });
+
+    // Auto-logout on 401 (expired/invalid token)
+    if (response.status === 401) {
+      try {
+        localStorage.removeItem('finance-auth');
+      } catch { /* ignore */ }
+      const errorData = await response.json().catch(() => ({}));
+      return { error: errorData.error || 'Sesi habis, silakan login ulang' };
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -77,7 +91,6 @@ async function apiRequest<T>(
   } catch (error) {
     console.error('API request failed:', error);
 
-    // Common in Lovable preview: browser can’t reach your local machine’s localhost.
     return {
       error:
         `Gagal terhubung ke server (${API_BASE_URL}). ` +
@@ -217,7 +230,7 @@ export const billPaymentsApi = createCrudApi<ApiBillPayment>('bill_payments');
 export interface ApiUser {
   id: string;
   username: string;
-  role: string;
+  role: 'admin' | 'user';
   createdAt: string;
 }
 

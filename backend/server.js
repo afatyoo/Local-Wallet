@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,12 +10,61 @@ import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-// In production, use a strong secret from environment variable
+// -------------------------
+// Security: JWT_SECRET must be set
+// -------------------------
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start.');
+  process.exit(1);
+}
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// -------------------------
+// Security: Helmet (secure HTTP headers)
+// -------------------------
+app.use(helmet());
+
+// -------------------------
+// Security: CORS (restrict origins)
+// -------------------------
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
+
+app.use(express.json({ limit: '1mb' }));
+
+// -------------------------
+// Security: Rate Limiting
+// -------------------------
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // 200 requests per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+app.use(globalLimiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 login/register attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts, please try again later' },
+});
 
 // -------------------------
 // MySQL connection pool
@@ -181,13 +232,162 @@ async function initDatabase() {
 }
 
 // -------------------------
+// Helpers
+// -------------------------
+function normalizeMysqlDatetime(value) {
+  if (!value) return value;
+  if (typeof value === 'string' && value.includes('T')) {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toISOString().slice(0, 19).replace('T', ' ');
+    }
+  }
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+/.test(value)) {
+    return value.slice(0, 19);
+  }
+  return value;
+}
+
+function pickColumns(body, allowedCols) {
+  const out = {};
+  for (const col of allowedCols) {
+    if (Object.prototype.hasOwnProperty.call(body, col)) {
+      out[col] = body[col];
+    }
+  }
+  return out;
+}
+
+/** Strip HTML tags from a string to prevent XSS in stored data */
+function stripHtml(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/<[^>]*>/g, '');
+}
+
+/** Validate date format YYYY-MM-DD */
+function isValidDate(str) {
+  return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str);
+}
+
+/** Validate month format YYYY-MM */
+function isValidMonth(str) {
+  return typeof str === 'string' && /^\d{4}-\d{2}$/.test(str);
+}
+
+// -------------------------
+// Auth Middleware
+// -------------------------
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+function authorizeAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+// -------------------------
+// Input Validation for each entity
+// -------------------------
+const VALIDATORS = {
+  incomes: (body) => {
+    if (!body.tanggal || !isValidDate(body.tanggal)) return 'tanggal harus format YYYY-MM-DD';
+    if (!body.sumber || typeof body.sumber !== 'string' || !body.sumber.trim()) return 'sumber wajib diisi';
+    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
+    if (!body.metode || typeof body.metode !== 'string' || !body.metode.trim()) return 'metode wajib diisi';
+    if (body.jumlah === undefined || body.jumlah === null || Number(body.jumlah) < 0) return 'jumlah harus >= 0';
+    return null;
+  },
+  expenses: (body) => {
+    if (!body.tanggal || !isValidDate(body.tanggal)) return 'tanggal harus format YYYY-MM-DD';
+    if (!body.nama || typeof body.nama !== 'string' || !body.nama.trim()) return 'nama wajib diisi';
+    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
+    if (!body.metode || typeof body.metode !== 'string' || !body.metode.trim()) return 'metode wajib diisi';
+    if (body.jumlah === undefined || body.jumlah === null || Number(body.jumlah) < 0) return 'jumlah harus >= 0';
+    return null;
+  },
+  budgets: (body) => {
+    if (!body.bulan || !isValidMonth(body.bulan)) return 'bulan harus format YYYY-MM';
+    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
+    if (body.anggaran === undefined || body.anggaran === null || Number(body.anggaran) < 0) return 'anggaran harus >= 0';
+    return null;
+  },
+  savings: (body) => {
+    if (!body.tanggal || !isValidDate(body.tanggal)) return 'tanggal harus format YYYY-MM-DD';
+    if (!body.jenis || !['Tabungan', 'Investasi'].includes(body.jenis)) return 'jenis harus Tabungan atau Investasi';
+    if (!body.nama_akun || typeof body.nama_akun !== 'string' || !body.nama_akun.trim()) return 'nama_akun wajib diisi';
+    return null;
+  },
+  master_data: (body) => {
+    if (!body.type || !['kategoriPemasukan', 'kategoriPengeluaran', 'metodePembayaran'].includes(body.type)) return 'type tidak valid';
+    if (!body.value || typeof body.value !== 'string' || !body.value.trim()) return 'value wajib diisi';
+    return null;
+  },
+  bills: (body) => {
+    if (!body.nama || typeof body.nama !== 'string' || !body.nama.trim()) return 'nama wajib diisi';
+    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
+    if (body.jumlah === undefined || body.jumlah === null || Number(body.jumlah) < 0) return 'jumlah harus >= 0';
+    if (body.tanggal_jatuh_tempo === undefined || Number(body.tanggal_jatuh_tempo) < 1 || Number(body.tanggal_jatuh_tempo) > 31) return 'tanggal_jatuh_tempo harus 1-31';
+    if (!body.mulai_dari || !isValidMonth(body.mulai_dari)) return 'mulai_dari harus format YYYY-MM';
+    return null;
+  },
+  bill_payments: (body) => {
+    if (!body.bill_id || typeof body.bill_id !== 'string') return 'bill_id wajib diisi';
+    if (!body.bulan || !isValidMonth(body.bulan)) return 'bulan harus format YYYY-MM';
+    if (body.jumlah_dibayar === undefined || body.jumlah_dibayar === null || Number(body.jumlah_dibayar) < 0) return 'jumlah_dibayar harus >= 0';
+    return null;
+  },
+};
+
+// Text fields that should be sanitized (strip HTML)
+const TEXT_FIELDS = ['catatan', 'nama', 'sumber', 'nama_akun', 'value', 'kategori'];
+
+function sanitizePayload(payload) {
+  const sanitized = { ...payload };
+  for (const field of TEXT_FIELDS) {
+    if (sanitized[field] !== undefined) {
+      sanitized[field] = stripHtml(sanitized[field]);
+    }
+  }
+  return sanitized;
+}
+
+// -------------------------
 // Auth routes
 // -------------------------
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: 'username and password are required' });
+    }
+
+    // Validate username
+    if (typeof username !== 'string' || username.trim().length < 3 || username.trim().length > 50) {
+      return res.status(400).json({ error: 'Username must be 3-50 characters' });
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username.trim())) {
+      return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores' });
+    }
+
+    // Validate password strength
+    if (typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
     // Check if this is the first user to assign admin role
@@ -200,10 +400,10 @@ app.post('/api/auth/register', async (req, res) => {
 
     await pool.query(
       'INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)',
-      [id, username, passwordHash, role]
+      [id, username.trim(), passwordHash, role]
     );
 
-    // Insert default master data (idempotent-ish: only when register)
+    // Insert default master data
     const defaultData = {
       kategoriPemasukan: ['Gaji', 'Bonus', 'Investasi', 'Freelance', 'Hadiah', 'Lainnya'],
       kategoriPengeluaran: ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Hiburan', 'Kesehatan', 'Pendidikan', 'Lainnya'],
@@ -228,24 +428,23 @@ app.post('/api/auth/register', async (req, res) => {
       );
     }
 
-    // Generate JWT token for immediate auth after registration
     const token = jwt.sign(
-      { id, username, role },
+      { id, username: username.trim(), role },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    res.json({ id, username, role, createdAt: new Date().toISOString(), token });
+    res.json({ id, username: username.trim(), role, createdAt: new Date().toISOString(), token });
   } catch (error) {
-    // duplicate username
     if (String(error?.code) === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: 'Username already exists' });
     }
-    res.status(500).json({ error: error.message });
+    console.error('Register error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {
@@ -263,7 +462,6 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Generate JWT token with user info including role
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       JWT_SECRET,
@@ -278,91 +476,61 @@ app.post('/api/auth/login', async (req, res) => {
       token
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // -------------------------
-// Helpers
-// -------------------------
-function normalizeMysqlDatetime(value) {
-  if (!value) return value;
-
-  // ISO: 2025-12-25T09:38:22.136Z -> 2025-12-25 09:38:22
-  if (typeof value === 'string' && value.includes('T')) {
-    const d = new Date(value);
-    if (!Number.isNaN(d.getTime())) {
-      return d.toISOString().slice(0, 19).replace('T', ' ');
-    }
-  }
-
-  // "YYYY-MM-DD HH:MM:SS.xxx" -> trim ms
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+/.test(value)) {
-    return value.slice(0, 19);
-  }
-
-  return value;
-}
-
-function pickColumns(body, allowedCols) {
-  const out = {};
-  for (const col of allowedCols) {
-    if (Object.prototype.hasOwnProperty.call(body, col)) {
-      out[col] = body[col];
-    }
-  }
-  return out;
-}
-
-// Middleware to authenticate JWT token
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-    req.user = user; // Attach user info to request object
-    next();
-  });
-}
-
-// Middleware to check if user is admin
-function authorizeAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-}
-
-// -------------------------
-// CRUD routes
+// Authenticated CRUD routes (with ownership verification)
 // -------------------------
 function createCrudRoutes(tableName, columns) {
-  // Get all for user
-  app.get(`/api/${tableName}/:userId`, async (req, res) => {
+  // All CRUD routes require authentication
+  const router = express.Router();
+  router.use(authenticateToken);
+
+  // Get all for user — uses token user ID, ignores URL param for security
+  router.get(`/${tableName}/:userId`, async (req, res) => {
     try {
-      const userId = req.params.userId;
+      const tokenUserId = req.user.id;
+      const requestedUserId = req.params.userId;
+
+      // Ownership check: user can only access their own data
+      if (tokenUserId !== requestedUserId) {
+        return res.status(403).json({ error: 'Access denied: you can only access your own data' });
+      }
+
       const [rows] = await pool.query(
         `SELECT * FROM ${tableName} WHERE user_id = ?`,
-        [userId]
+        [tokenUserId]
       );
       res.json(rows);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error(`GET /${tableName} error:`, error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
-  // Create
-  app.post(`/api/${tableName}`, async (req, res) => {
+  // Create — force user_id from token
+  router.post(`/${tableName}`, async (req, res) => {
     try {
       const id = uuidv4();
-      const payload = pickColumns(req.body || {}, columns);
+      let payload = pickColumns(req.body || {}, columns);
+
+      // Force user_id from authenticated user (ignore body.user_id)
+      payload.user_id = req.user.id;
+
+      // Validate input
+      const validator = VALIDATORS[tableName];
+      if (validator) {
+        const validationError = validator(payload);
+        if (validationError) {
+          return res.status(400).json({ error: validationError });
+        }
+      }
+
+      // Sanitize text fields
+      payload = sanitizePayload(payload);
 
       // Special normalize for bill_payments
       if (payload.dibayar_pada) {
@@ -382,15 +550,35 @@ function createCrudRoutes(tableName, columns) {
 
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error(`POST /${tableName} error:`, error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
-  // Update
-  app.put(`/api/${tableName}/:id`, async (req, res) => {
+  // Update — with ownership check
+  router.put(`/${tableName}/:id`, async (req, res) => {
     try {
       const id = req.params.id;
-      const payload = pickColumns(req.body || {}, columns);
+
+      // Ownership check: verify this row belongs to the authenticated user
+      const [existing] = await pool.query(
+        `SELECT user_id FROM ${tableName} WHERE id = ?`,
+        [id]
+      );
+      if (existing.length === 0) {
+        return res.status(404).json({ error: 'Record not found' });
+      }
+      if (existing[0].user_id !== req.user.id) {
+        return res.status(403).json({ error: 'Access denied: you can only modify your own data' });
+      }
+
+      let payload = pickColumns(req.body || {}, columns);
+
+      // Prevent changing user_id
+      delete payload.user_id;
+
+      // Sanitize text fields
+      payload = sanitizePayload(payload);
 
       if (payload.dibayar_pada) {
         payload.dibayar_pada = normalizeMysqlDatetime(payload.dibayar_pada);
@@ -411,42 +599,61 @@ function createCrudRoutes(tableName, columns) {
 
       res.json({ id, ...payload });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error(`PUT /${tableName} error:`, error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
-  // Delete
-  app.delete(`/api/${tableName}/:id`, async (req, res) => {
+  // Delete — with ownership check
+  router.delete(`/${tableName}/:id`, async (req, res) => {
     try {
-      await pool.query(`DELETE FROM ${tableName} WHERE id = ?`, [req.params.id]);
+      const id = req.params.id;
+
+      // Ownership check
+      const [existing] = await pool.query(
+        `SELECT user_id FROM ${tableName} WHERE id = ?`,
+        [id]
+      );
+      if (existing.length === 0) {
+        return res.status(404).json({ error: 'Record not found' });
+      }
+      if (existing[0].user_id !== req.user.id) {
+        return res.status(403).json({ error: 'Access denied: you can only delete your own data' });
+      }
+
+      await pool.query(`DELETE FROM ${tableName} WHERE id = ?`, [id]);
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error(`DELETE /${tableName} error:`, error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
+
+  app.use('/api', router);
 }
 
 // Routes for all tables
-createCrudRoutes('incomes', ['user_id', 'tanggal', 'bulan', 'sumber', 'kategori', 'metode', 'jumlah', 'catatan', 'saving_id',]);
-createCrudRoutes('expenses', ['user_id', 'tanggal', 'bulan', 'nama', 'kategori', 'metode', 'jumlah', 'catatan', 'bill_payment_id', 'saving_id',]);
+createCrudRoutes('incomes', ['user_id', 'tanggal', 'bulan', 'sumber', 'kategori', 'metode', 'jumlah', 'catatan', 'saving_id']);
+createCrudRoutes('expenses', ['user_id', 'tanggal', 'bulan', 'nama', 'kategori', 'metode', 'jumlah', 'catatan', 'bill_payment_id', 'saving_id']);
 createCrudRoutes('budgets', ['user_id', 'bulan', 'kategori', 'anggaran']);
 createCrudRoutes('savings', ['user_id', 'tanggal', 'jenis', 'nama_akun', 'setoran', 'penarikan', 'catatan']);
 createCrudRoutes('master_data', ['user_id', 'type', 'value']);
 createCrudRoutes('bills', ['user_id', 'nama', 'kategori', 'jumlah', 'tanggal_jatuh_tempo', 'mulai_dari', 'sampai_dengan', 'catatan', 'is_active']);
 createCrudRoutes('bill_payments', ['bill_id', 'user_id', 'bulan', 'dibayar_pada', 'jumlah_dibayar']);
 
+// -------------------------
 // User management routes (admin only)
-// Get all users
+// -------------------------
 app.get('/api/users', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT id, username, role, created_at FROM users');
     res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('GET /users error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get specific user
 app.get('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -458,11 +665,11 @@ app.get('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) =>
 
     res.json(rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('GET /users/:id error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Update user role
 app.put('/api/users/:id/role', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -480,11 +687,11 @@ app.put('/api/users/:id/role', authenticateToken, authorizeAdmin, async (req, re
 
     res.json({ message: 'User role updated successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('PUT /users/:id/role error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Delete user
 app.delete('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -502,11 +709,12 @@ app.delete('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res)
 
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('DELETE /users/:id error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Health check
+// Health check (no auth required)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });

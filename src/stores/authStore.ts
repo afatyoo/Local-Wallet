@@ -108,11 +108,25 @@ export const useAuthStore = create<AuthState>()(
       },
 
       checkSession: async () => {
-        // Session is managed via persisted state
-        // User remains authenticated as long as their data is in localStorage
         const { user } = get();
-        if (!user) {
+        if (!user || !user.token) {
           set({ user: null, isAuthenticated: false });
+          return;
+        }
+
+        // Decode JWT payload (base64) and check exp
+        try {
+          const payloadPart = user.token.split('.')[1];
+          if (!payloadPart) throw new Error('Invalid token structure');
+          const payload = JSON.parse(atob(payloadPart));
+          const now = Math.floor(Date.now() / 1000);
+          if (payload.exp && payload.exp < now) {
+            // Token expired — log out
+            set({ user: null, isAuthenticated: false, error: null });
+          }
+        } catch {
+          // Malformed token — log out
+          set({ user: null, isAuthenticated: false, error: null });
         }
       },
     }),
