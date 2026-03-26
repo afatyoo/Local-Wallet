@@ -254,5 +254,6 @@
   "target_title": "Savings Target",
   "target_total_target": "Total Target",
   "target_updated": "Target successfully updated",
-  "settings_language_description": "Pick any language you want"
+  "settings_language_description": "Pick any language you want",
+  "nav_user_management": "Manage User"
 }

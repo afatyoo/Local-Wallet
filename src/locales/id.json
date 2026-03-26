@@ -254,5 +254,6 @@
   "target_title": "Target Tabungan",
   "target_total_target": "Total Target",
   "target_updated": "Target berhasil diupdate",
-  "settings_language_description": "Pilih bahasa yang kamu inginkan"
+  "settings_language_description": "Pilih bahasa yang kamu inginkan",
+  "nav_user_management": "Kelola Pengguna"
 }

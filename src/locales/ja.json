@@ -254,5 +254,6 @@
   "target_title": "保存ターゲット",
   "target_total_target": "トータルターゲット",
   "target_updated": "正常に更新されたターゲット",
-  "settings_language_description": "好きな言語を選ぶ"
+  "settings_language_description": "好きな言語を選ぶ",
+  "nav_user_management": "ユーザー管理"
 }

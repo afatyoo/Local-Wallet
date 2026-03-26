@@ -3,6 +3,13 @@ import cors from 'cors';
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
+
+dotenv.config();
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+// In production, use a strong secret from environment variable
 
 const app = express();
 app.use(cors());
@@ -33,9 +40,22 @@ async function initDatabase() {
         id VARCHAR(36) PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        role ENUM('admin','user') NOT NULL DEFAULT 'user',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration: add role column if table existed before role was added
+    const [cols] = await connection.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'`
+    );
+    if (cols.length === 0) {
+      await connection.query(
+        `ALTER TABLE users ADD COLUMN role ENUM('admin','user') NOT NULL DEFAULT 'user' AFTER password_hash`
+      );
+      console.log('Migration: added role column to users table');
+    }
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS incomes (
@@ -134,6 +154,26 @@ async function initDatabase() {
       )
     `);
 
+    // Seed default admin user if not exists, or ensure role is admin
+    const [existingAdmin] = await connection.query(
+      'SELECT id, role FROM users WHERE username = ?', ['admin']
+    );
+    if (existingAdmin.length === 0) {
+      const adminId = uuidv4();
+      const adminHash = await bcrypt.hash('admin', 10);
+      await connection.query(
+        'INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)',
+        [adminId, 'admin', adminHash, 'admin']
+      );
+      console.log('Default admin user created (username: admin, password: admin)');
+    } else if (existingAdmin[0].role !== 'admin') {
+      const adminHash = await bcrypt.hash('admin', 10);
+      await connection.query(
+        'UPDATE users SET role = ?, password_hash = ? WHERE username = ?', ['admin', adminHash, 'admin']
+      );
+      console.log('Existing admin user promoted to admin role with default password');
+    }
+
     console.log('Database tables initialized successfully');
   } finally {
     connection.release();
@@ -150,12 +190,17 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'username and password are required' });
     }
 
+    // Check if this is the first user to assign admin role
+    const [countRows] = await pool.query('SELECT COUNT(*) as count FROM users');
+    const isFirstUser = countRows[0].count === 0;
+    const role = isFirstUser ? 'admin' : 'user';
+
     const passwordHash = await bcrypt.hash(password, 10);
     const id = uuidv4();
 
     await pool.query(
-      'INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)',
-      [id, username, passwordHash]
+      'INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)',
+      [id, username, passwordHash, role]
     );
 
     // Insert default master data (idempotent-ish: only when register)
@@ -183,7 +228,14 @@ app.post('/api/auth/register', async (req, res) => {
       );
     }
 
-    res.json({ id, username, createdAt: new Date().toISOString() });
+    // Generate JWT token for immediate auth after registration
+    const token = jwt.sign(
+      { id, username, role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({ id, username, role, createdAt: new Date().toISOString(), token });
   } catch (error) {
     // duplicate username
     if (String(error?.code) === 'ER_DUP_ENTRY') {
@@ -211,7 +263,20 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    res.json({ id: user.id, username: user.username, createdAt: user.created_at });
+    // Generate JWT token with user info including role
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      createdAt: user.created_at,
+      token
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -247,6 +312,32 @@ function pickColumns(body, allowedCols) {
     }
   }
   return out;
+}
+
+// Middleware to authenticate JWT token
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    req.user = user; // Attach user info to request object
+    next();
+  });
+}
+
+// Middleware to check if user is admin
+function authorizeAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
 }
 
 // -------------------------
@@ -343,6 +434,77 @@ createCrudRoutes('savings', ['user_id', 'tanggal', 'jenis', 'nama_akun', 'setora
 createCrudRoutes('master_data', ['user_id', 'type', 'value']);
 createCrudRoutes('bills', ['user_id', 'nama', 'kategori', 'jumlah', 'tanggal_jatuh_tempo', 'mulai_dari', 'sampai_dengan', 'catatan', 'is_active']);
 createCrudRoutes('bill_payments', ['bill_id', 'user_id', 'bulan', 'dibayar_pada', 'jumlah_dibayar']);
+
+// User management routes (admin only)
+// Get all users
+app.get('/api/users', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id, username, role, created_at FROM users');
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get specific user
+app.get('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const [rows] = await pool.query('SELECT id, username, role, created_at FROM users WHERE id = ?', [userId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update user role
+app.put('/api/users/:id/role', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { role } = req.body;
+
+    if (!role || !['admin', 'user'].includes(role)) {
+      return res.status(400).json({ error: 'Valid role (admin or user) is required' });
+    }
+
+    const [result] = await pool.query('UPDATE users SET role = ? WHERE id = ?', [role, userId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ message: 'User role updated successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete user
+app.delete('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Prevent deleting yourself
+    if (userId === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+
+    const [result] = await pool.query('DELETE FROM users WHERE id = ?', [userId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -254,5 +254,6 @@
   "target_title": "هدف الوفورات",
   "target_total_target": "المجموع المستهدف",
   "target_updated": "استكمال الهدف بنجاح",
-  "settings_language_description": "اختر أي لغة تريدها"
+  "settings_language_description": "اختر أي لغة تريدها",
+  "nav_user_management": "إدارة المستخدمين"
 }

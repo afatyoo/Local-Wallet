@@ -5,7 +5,9 @@ import { authApi } from '@/lib/api';
 interface User {
   id: string;
   username: string;
+  role: string;
   createdAt: string;
+  token: string;
 }
 
 interface AuthState {
@@ -31,14 +33,14 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username: string, password: string) => {
         set({ isLoading: true, error: null });
-        
+
         try {
           const { data, error } = await authApi.login(username, password);
-          
+
           if (error) {
-            set({ 
-              error: error === 'Invalid credentials' ? 'Username atau password salah' : error, 
-              isLoading: false 
+            set({
+              error: error === 'Invalid credentials' ? 'Username atau password salah' : error,
+              isLoading: false
             });
             return false;
           }
@@ -47,7 +49,9 @@ export const useAuthStore = create<AuthState>()(
             const user: User = {
               id: data.id,
               username: data.username,
+              role: data.role,
               createdAt: data.createdAt,
+              token: data.token,
             };
             set({ user, isAuthenticated: true, isLoading: false, error: null });
             return true;
@@ -63,14 +67,14 @@ export const useAuthStore = create<AuthState>()(
 
       register: async (username: string, password: string) => {
         set({ isLoading: true, error: null });
-        
+
         try {
           const { data, error } = await authApi.register(username, password);
-          
+
           if (error) {
-            set({ 
-              error: error === 'Username already exists' ? 'Username sudah digunakan' : error, 
-              isLoading: false 
+            set({
+              error: error === 'Username already exists' ? 'Username sudah digunakan' : error,
+              isLoading: false
             });
             return false;
           }
@@ -79,7 +83,9 @@ export const useAuthStore = create<AuthState>()(
             const user: User = {
               id: data.id,
               username: data.username,
+              role: data.role,
               createdAt: data.createdAt,
+              token: data.token,
             };
             set({ user, isAuthenticated: true, isLoading: false, error: null });
             return true;

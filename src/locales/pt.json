@@ -254,5 +254,6 @@
   "target_title": "Alvo da poupança",
   "target_total_target": "Objectivo Total",
   "target_updated": "Alvo actualizado com sucesso",
-  "settings_language_description": "Escolha a língua que quiser"
+  "settings_language_description": "Escolha a língua que quiser",
+  "nav_user_management": "Gestão de Utilizadores"
 }

@@ -32,6 +32,18 @@ function resolveApiBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
+// Read JWT token from Zustand persisted auth store
+function getAuthToken(): string | null {
+  try {
+    const raw = localStorage.getItem('finance-auth');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.user?.token || null;
+  } catch {
+    return null;
+  }
+}
+
 interface ApiResponse<T> {
   data?: T;
   error?: string;
@@ -42,11 +54,16 @@ async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   try {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
       ...options,
     });
 
@@ -73,13 +90,13 @@ async function apiRequest<T>(
 // Auth API
 export const authApi = {
   login: (username: string, password: string) =>
-    apiRequest<{ id: string; username: string; createdAt: string }>('/auth/login', {
+    apiRequest<{ id: string; username: string; role: string; createdAt: string; token: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
 
   register: (username: string, password: string) =>
-    apiRequest<{ id: string; username: string; createdAt: string }>('/auth/register', {
+    apiRequest<{ id: string; username: string; role: string; createdAt: string; token: string }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
@@ -195,6 +212,30 @@ export const savingsApi = createCrudApi<ApiSaving>('savings');
 export const masterDataApi = createCrudApi<ApiMasterData>('master_data');
 export const billsApi = createCrudApi<ApiBill>('bills');
 export const billPaymentsApi = createCrudApi<ApiBillPayment>('bill_payments');
+
+// User management API (admin only)
+export interface ApiUser {
+  id: string;
+  username: string;
+  role: string;
+  createdAt: string;
+}
+
+export const usersApi = {
+  getAll: () => apiRequest<ApiUser[]>(`/users`, {
+    method: 'GET'
+  }),
+  getById: (id: string) => apiRequest<ApiUser>(`/users/${id}`, {
+    method: 'GET'
+  }),
+  updateRole: (id: string, role: string) => apiRequest<{ message: string }>(`/users/${id}/role`, {
+    method: 'PUT',
+    body: JSON.stringify({ role })
+  }),
+  delete: (id: string) => apiRequest<{ success: boolean; message: string }>(`/users/${id}`, {
+    method: 'DELETE'
+  })
+};
 
 // Helper to convert between frontend camelCase and backend snake_case
 export const convertToFrontend = {

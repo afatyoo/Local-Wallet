@@ -19,6 +19,7 @@ import InsightsPage from "./pages/Insights";
 import HealthScorePage from "./pages/HealthScore";
 import HeatmapPage from "./pages/Heatmap";
 import TargetsPage from "./pages/Targets";
+import UserManagementPage from "./pages/UserManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ const App = () => (
           <Route path="/targets" element={<ProtectedRoute><TargetsPage /></ProtectedRoute>} />
           <Route path="/master-data" element={<ProtectedRoute><MasterDataPage /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/user-management" element={<ProtectedRoute><UserManagementPage /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
