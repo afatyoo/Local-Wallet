@@ -632,6 +632,11 @@ function createCrudRoutes(tableName, columns) {
   app.use('/api', router);
 }
 
+// Health check — public, no auth required. Must be before createCrudRoutes.
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // Routes for all tables
 createCrudRoutes('incomes', ['user_id', 'tanggal', 'bulan', 'sumber', 'kategori', 'metode', 'jumlah', 'catatan', 'saving_id']);
 createCrudRoutes('expenses', ['user_id', 'tanggal', 'bulan', 'nama', 'kategori', 'metode', 'jumlah', 'catatan', 'bill_payment_id', 'saving_id']);
@@ -714,10 +719,7 @@ app.delete('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res)
   }
 });
 
-// Health check (no auth required)
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+// Health check is registered inside createCrudRoutes before the authenticated router
 
 const PORT = Number(process.env.PORT || 3001);
 

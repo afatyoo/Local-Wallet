@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authApi } from '@/lib/api';
+import { setUnauthorizedHandler } from '@/lib/api';
 
 interface User {
   id: string;
@@ -139,3 +140,8 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+// Register logout handler untuk 401 responses
+setUnauthorizedHandler(() => {
+  useAuthStore.getState().logout();
+});

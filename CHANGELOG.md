@@ -3,13 +3,17 @@
 All notable changes to **My Local Wallet** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
----
-
-
 
 ---
 
-## [Unreleased]
+## [1.2.2] — 2026-03-26
+
+### Fixed
+- **401 logout sync**: When API returns 401, `apiRequest` now calls `unauthorizedHandler` which triggers `authStore.logout()` to ensure frontend state matches the cleared localStorage. Prevents "Access Token Required" errors on retry after token expiry.
+
+---
+
+## [1.2.1] — 2026-03-26
 
 ### Added
 - **User Management page**: Added a new page for managing users with the ability to view, update, and delete users.
@@ -38,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **UserManagement React import bug**: Fixed `React.useEffect` usage without importing `React` in `UserManagement.tsx`; replaced with direct `useEffect` import.
 - **JWT auth token not sent**: Fixed "Access Token Required" error on User Management and all protected API endpoints. Root cause: frontend never stored or sent the JWT token from login/register. Now `authStore` persists the token and `apiRequest` attaches `Authorization: Bearer` header on every request. Backend register endpoint also returns a JWT token (login already did).
 
+---
+
 ## [1.1.0]
 
 ### Added
@@ -54,11 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **PDF generation error**: Fixed `Invalid argument passed to jsPDF.f3` error by using hex color strings instead of RGB arrays and ensuring jsPDF 2.5.1 + jspdf-autotable 3.5.13 compatibility.
 - **Report UI localization**: Changed report page UI and generated PDFs to use English as default language for better internationalization.
 
-
 ---
-
-## [Unreleased]
-
 
 ## [1.0.0] — Initial Release
 

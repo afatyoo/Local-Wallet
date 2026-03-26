@@ -32,6 +32,12 @@ function resolveApiBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
+// Handler untuk unauthorized (401) - dapat di-set oleh auth store
+let unauthorizedHandler: (() => void) | null = null;
+export function setUnauthorizedHandler(handler: () => void) {
+  unauthorizedHandler = handler;
+}
+
 // Read JWT token from Zustand persisted auth store
 function getAuthToken(): string | null {
   try {
@@ -77,6 +83,10 @@ async function apiRequest<T>(
       try {
         localStorage.removeItem('finance-auth');
       } catch { /* ignore */ }
+      // Call unauthorized handler to clear auth store state
+      if (unauthorizedHandler) {
+        unauthorizedHandler();
+      }
       const errorData = await response.json().catch(() => ({}));
       return { error: errorData.error || 'Sesi habis, silakan login ulang' };
     }
