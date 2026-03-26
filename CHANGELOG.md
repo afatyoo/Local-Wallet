@@ -4,12 +4,9 @@ All notable changes to **My Local Wallet** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-
-
-
 ---
 
-## [Unreleased]
+## [1.2.2] — 2026-03-26
 
 ### Fixed
 - **401 logout sync**: When API returns 401, `apiRequest` now calls `unauthorizedHandler` which triggers `authStore.logout()` to ensure frontend state matches the cleared localStorage. Prevents "Access Token Required" errors on retry after token expiry.
