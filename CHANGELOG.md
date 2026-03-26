@@ -11,6 +11,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **401 logout sync**: When API returns 401, `apiRequest` now calls `unauthorizedHandler` which triggers `authStore.logout()` to ensure frontend state matches the cleared localStorage. Prevents "Access Token Required" errors on retry after token expiry.
+
+---
+
+## [1.2.1] — 2026-03-26
+
+>>>>>>> f50ab5f (fix: sync auth store logout on 401 responses)
 ### Added
 - **User Management page**: Added a new page for managing users with the ability to view, update, and delete users.
 - **User Management navigation**: Added a navigation link to the User Management page in the sidebar.
