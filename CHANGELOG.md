@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.2.1] — 2026-03-26
 
 ### Added
+- **User Management page**: Added a new page for managing users with the ability to view, update, and delete users.
+- **User Management navigation**: Added a navigation link to the User Management page in the sidebar.
+- **User Management i18n**: Added translation keys for the User Management page in all 12 locale files.
+- **Admin-only User Management nav**: Added "User Management" sidebar link (ShieldCheck icon) visible only to admin users. Non-admin users do not see this menu item.
+- **i18n for User Management**: Added `nav_user_management` translation key to all 12 locale files (ID, EN, ES, FR, DE, PT, RU, AR, HI, ZH, JA, KO).
+- **Default admin user**: On Docker startup, a default admin account (username: `admin`, password: `admin`) is automatically created if it doesn't already exist.
 - **Rate limiting**: Global limit (100 req/15 min) + aggressive auth limit (5 req/15 min) via `express-rate-limit` to prevent brute-force attacks.
 - **Security headers**: Added `helmet()` middleware — sets `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, and 8+ other headers automatically.
 - **Input validation**: Required-field checks, date/month format validation (`YYYY-MM-DD` / `YYYY-MM`), and minimum password length (6 chars) on all endpoints.
@@ -19,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **CORS restriction**: CORS now reads `ALLOWED_ORIGINS` env var instead of allowing every origin (`*`).
 - **Docker env passthrough**: `JWT_SECRET` and `ALLOWED_ORIGINS` are now forwarded to the backend container in `docker-compose.yml`.
 - **`.env.example`**: Documents all required backend environment variables including `JWT_SECRET` and `ALLOWED_ORIGINS`.
+
 
 ### Fixed
 - **Auth middleware gap**: `authenticateToken` middleware was missing from all CRUD routes (income, expense, budget, savings, bills, bill-payments, admin). Any unauthenticated request could previously read or modify any user's data.
@@ -28,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Auto-logout on 401**: Frontend now clears the persisted session and returns a user-friendly message when the server responds with 401.
 - **JWT expiry check**: `checkSession()` now decodes the JWT payload and checks the `exp` claim locally — expired or malformed tokens are cleared on app load rather than waiting for a server rejection.
 - **`ApiUser.role` type**: Narrowed from `string` to `'admin' | 'user'` to match the actual backend ENUM, fixing a TypeScript lint error in `UserManagement.tsx`.
+- **UserManagement React import bug**: Fixed `React.useEffect` usage without importing `React` in `UserManagement.tsx`; replaced with direct `useEffect` import.
+- **JWT auth token not sent**: Fixed "Access Token Required" error on User Management and all protected API endpoints. Root cause: frontend never stored or sent the JWT token from login/register. Now `authStore` persists the token and `apiRequest` attaches `Authorization: Bearer` header on every request. Backend register endpoint also returns a JWT token (login already did).
 
 ## [1.1.0]
 
