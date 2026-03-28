@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.1] — 2026-03-28
+
+### Added
+- **Admin password reset**: Administrators can now change user passwords directly from the User Management page via an inline modal (Key icon button). This allows admins to reset passwords for any user except themselves.
+
+### Changed
+- **Registration flow moved**: User registration is now only available through the User Management page as an inline modal for admins. The standalone `/register` page has been removed. Non-admin users can no longer self-register; only administrators can create new user accounts.
+- **User Management modal localized**: The "Add New User" modal in User Management page is now in English with improved styling (glass-card effect, smooth animations).
+- **Created At display fixed**: Fixed bug where user creation dates were not displaying correctly due to timezone issues. Backend now returns `createdAt` as a date string (YYYY-MM-DD) based on the server's local timezone. Frontend displays it in DD/MM/YYYY format, ensuring the date matches what the server shows regardless of the client's timezone.
+- **Insights page translations improved**: Fixed hardcoded "Insights" section title by adding `insights_insights` translation key. Changed English `insights_title` from "Where's My Money" to "Spending Insights" for better professionalism. Indonesian translations remain natural ("Kemana Uang Saya").
+
+---
+
 ## [1.2.2] — 2026-03-26
 
 ### Fixed

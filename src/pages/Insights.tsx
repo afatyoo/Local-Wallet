@@ -170,7 +170,7 @@ export default function InsightsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-primary">
                   <Lightbulb className="w-5 h-5" />
-                  Insights
+                  {t('insights_insights')}
                 </CardTitle>
               </CardHeader>
               <CardContent>

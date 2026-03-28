@@ -117,10 +117,7 @@ export default function Login() {
             </Button>
 
             <p className="text-sm text-muted-foreground text-center">
-              Belum punya akun?{' '}
-              <Link to="/register" className="text-primary hover:underline font-medium">
-                Daftar sekarang
-              </Link>
+              Don't have an account? Contact your administrator to create one.
             </p>
           </CardFooter>
         </form>
