@@ -652,7 +652,21 @@ createCrudRoutes('bill_payments', ['bill_id', 'user_id', 'bulan', 'dibayar_pada'
 app.get('/api/users', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT id, username, role, created_at FROM users');
-    res.json(rows);
+    // Convert snake_case to camelCase for frontend consistency
+    // Format createdAt as YYYY-MM-DD based on server's local timezone
+    const users = rows.map(row => {
+      const date = new Date(row.created_at);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return {
+        id: row.id,
+        username: row.username,
+        role: row.role,
+        createdAt: `${year}-${month}-${day}` // format: YYYY-MM-DD (server local date)
+      };
+    });
+    res.json(users);
   } catch (error) {
     console.error('GET /users error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -668,7 +682,19 @@ app.get('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) =>
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json(rows[0]);
+    // Convert snake_case to camelCase for frontend consistency
+    // Format createdAt as YYYY-MM-DD based on server's local timezone
+    const date = new Date(rows[0].created_at);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const user = {
+      id: rows[0].id,
+      username: rows[0].username,
+      role: rows[0].role,
+      createdAt: `${year}-${month}-${day}` // format: YYYY-MM-DD (server local date)
+    };
+    res.json(user);
   } catch (error) {
     console.error('GET /users/:id error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -715,6 +741,42 @@ app.delete('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res)
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     console.error('DELETE /users/:id error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/api/users/:id/password', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+
+    // Validate password strength
+    if (typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
+    }
+
+    if (!/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one number' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const [result] = await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ message: 'User password updated successfully' });
+  } catch (error) {
+    console.error('PUT /users/:id/password error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

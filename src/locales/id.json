@@ -153,6 +153,7 @@
   "insights_top_three": "Top 3 kategori pengeluaran: {categories}",
   "insights_transactions": "Daftar Transaksi",
   "insights_transactions_count": "{count} transaksi",
+  "insights_insights": "Insights",
   "master_add_category": "Tambah Kategori",
   "master_add_source": "Tambah Sumber",
   "master_expense_category": "Kategori Pengeluaran",

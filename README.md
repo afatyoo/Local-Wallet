@@ -9,7 +9,7 @@ Great for tracking **income, expenses, budgets, savings/investments, and recurri
 
 ## ✨ Features
 
-- 🔐 **Register & Login** (passwords hashed with bcrypt)
+- 🔐 **Register & Login** (passwords hashed with bcrypt) — registration is admin-only (see User Management)
 - 📊 **Dashboard**: income vs expense, balance summary, recent transactions
 - 💵 **Income**: CRUD + categories + payment methods
 - 💸 **Expenses**: CRUD + categories + payment methods
@@ -19,6 +19,15 @@ Great for tracking **income, expenses, budgets, savings/investments, and recurri
 - 📈 **Insights & Heatmap** (spending patterns)
 - 🧾 **Reports** + **Export to PDF**
 - ♻️ **Export/Import JSON** for backup/restore
+
+### 👤 User Management (Admin)
+- Admins can view all users, update roles, reset passwords, and create new users via inline modal
+- Self-registration is disabled; only administrators can create accounts
+- Dates (e.g., Created At) are displayed in the server's local timezone for consistency
+
+### 🕒 Timezone Handling
+- All timestamps stored in MySQL use the server's timezone
+- Frontend displays dates (e.g., user Created At) in DD/MM/YYYY format based on server timezone, ensuring consistent date display regardless of client location
 
 ### 💱 Currency (Multi-currency Display)
 - ✅ **Base currency: IDR** (amounts are stored in IDR)

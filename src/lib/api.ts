@@ -255,6 +255,10 @@ export const usersApi = {
     method: 'PUT',
     body: JSON.stringify({ role })
   }),
+  updatePassword: (id: string, password: string) => apiRequest<{ message: string }>(`/users/${id}/password`, {
+    method: 'PUT',
+    body: JSON.stringify({ password })
+  }),
   delete: (id: string) => apiRequest<{ success: boolean; message: string }>(`/users/${id}`, {
     method: 'DELETE'
   })
