@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased]
+## [1.3.1] — 2026-03-28
 
 ### Added
 - **Admin password reset**: Administrators can now change user passwords directly from the User Management page via an inline modal (Key icon button). This allows admins to reset passwords for any user except themselves.
