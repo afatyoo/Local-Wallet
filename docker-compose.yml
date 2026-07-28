@@ -123,6 +123,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       TFA_ENCRYPTION_KEY: ${TFA_ENCRYPTION_KEY:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:

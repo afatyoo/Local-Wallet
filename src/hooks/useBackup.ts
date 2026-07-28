@@ -4,8 +4,9 @@ import { useFinanceStore } from '@/stores/financeStore';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 
-const BACKUP_KEY = 'finance_backup_data';
-const LAST_BACKUP_KEY = 'finance_last_backup';
+const backupKey = (userId: string) => `finance_backup_data:${userId}`;
+const backupDateKey = (userId: string) => `finance_backup_date:${userId}`;
+const lastBackupKey = (userId: string) => `finance_last_backup:${userId}`;
 const REMINDER_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 export function useBackup() {
@@ -16,14 +17,16 @@ export function useBackup() {
 
   // Get last backup date
   const getLastBackupDate = useCallback((): Date | null => {
-    const lastBackup = localStorage.getItem(LAST_BACKUP_KEY);
+    if (!user?.id) return null;
+    const lastBackup = localStorage.getItem(lastBackupKey(user.id));
     return lastBackup ? new Date(lastBackup) : null;
-  }, []);
+  }, [user?.id]);
 
   // Update last backup date
   const updateLastBackupDate = useCallback(() => {
-    localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
-  }, []);
+    if (!user?.id) return;
+    localStorage.setItem(lastBackupKey(user.id), new Date().toISOString());
+  }, [user?.id]);
 
   // Auto-save to localStorage (dual storage)
   const autoSaveToLocalStorage = useCallback(async () => {
@@ -31,8 +34,8 @@ export function useBackup() {
     
     try {
       const jsonData = await exportData(user.id);
-      localStorage.setItem(BACKUP_KEY, jsonData);
-      localStorage.setItem(`${BACKUP_KEY}_date`, new Date().toISOString());
+      localStorage.setItem(backupKey(user.id), jsonData);
+      localStorage.setItem(backupDateKey(user.id), new Date().toISOString());
     } catch (error) {
       console.error('Auto-save to localStorage failed:', error);
     }
@@ -80,7 +83,7 @@ export function useBackup() {
   const restoreFromLocalStorage = useCallback(async () => {
     if (!user?.id) return false;
 
-    const backupData = localStorage.getItem(BACKUP_KEY);
+    const backupData = localStorage.getItem(backupKey(user.id));
     if (!backupData) {
       toast({
         title: t('common_warning'),
@@ -124,14 +127,15 @@ export function useBackup() {
 
   // Get local backup info
   const getLocalBackupInfo = useCallback(() => {
-    const backupDate = localStorage.getItem(`${BACKUP_KEY}_date`);
-    const hasBackup = localStorage.getItem(BACKUP_KEY) !== null;
+    if (!user?.id) return { hasBackup: false, backupDate: null };
+    const backupDate = localStorage.getItem(backupDateKey(user.id));
+    const hasBackup = localStorage.getItem(backupKey(user.id)) !== null;
     
     return {
       hasBackup,
       backupDate: backupDate ? new Date(backupDate) : null,
     };
-  }, []);
+  }, [user?.id]);
 
   // Auto-save on data changes (debounced effect in components that use this)
   useEffect(() => {

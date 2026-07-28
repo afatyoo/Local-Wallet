@@ -38,16 +38,12 @@ export function setUnauthorizedHandler(handler: () => void) {
   unauthorizedHandler = handler;
 }
 
-// Read JWT token from Zustand persisted auth store
-function getAuthToken(): string | null {
-  try {
-    const raw = localStorage.getItem('finance-auth');
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.state?.user?.token || null;
-  } catch {
-    return null;
-  }
+function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie
+    .split('; ')
+    .find((cookie) => cookie.startsWith('wallet_csrf='));
+  return match ? decodeURIComponent(match.slice('wallet_csrf='.length)) : null;
 }
 
 interface ApiResponse<T> {
@@ -60,7 +56,6 @@ export interface AuthenticatedUserResponse {
   username: string;
   role: string;
   createdAt: string;
-  token: string;
 }
 
 export interface TfaChallengeResponse {
@@ -74,30 +69,25 @@ async function apiRequest<T>(
   behavior: { logoutOnUnauthorized?: boolean } = {},
 ): Promise<ApiResponse<T>> {
   try {
-    const token = getAuthToken();
-
-    // Build headers safely: start with defaults, merge caller's, then add auth
     const mergedHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> | undefined),
     };
-    if (token) {
-      mergedHeaders['Authorization'] = `Bearer ${token}`;
+    const method = String(options.method || 'GET').toUpperCase();
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) mergedHeaders['X-CSRF-Token'] = csrfToken;
     }
 
-    // Destructure to exclude options.headers, then spread rest + our merged headers
     const { headers: _discardedHeaders, ...restOptions } = options;
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...restOptions,
       headers: mergedHeaders,
+      credentials: 'include',
     });
 
     // Auto-logout on 401 (expired/invalid token)
     if (response.status === 401 && behavior.logoutOnUnauthorized !== false) {
-      try {
-        localStorage.removeItem('finance-auth');
-      } catch { /* ignore */ }
-      // Call unauthorized handler to clear auth store state
       if (unauthorizedHandler) {
         unauthorizedHandler();
       }
@@ -142,6 +132,14 @@ export const authApi = {
     apiRequest<AuthenticatedUserResponse>('/auth/tfa/verify-login', {
       method: 'POST',
       body: JSON.stringify({ challenge, code }),
+    }, { logoutOnUnauthorized: false }),
+
+  getSession: () =>
+    apiRequest<AuthenticatedUserResponse>('/auth/session', {}, { logoutOnUnauthorized: false }),
+
+  logout: () =>
+    apiRequest<{ success: true }>('/auth/logout', {
+      method: 'POST',
     }, { logoutOnUnauthorized: false }),
 
   getTfaStatus: () =>
@@ -286,6 +284,14 @@ export const savingsTargetsApi = createCrudApi<ApiSavingsTarget>('savings_target
 export const masterDataApi = createCrudApi<ApiMasterData>('master_data');
 export const billsApi = createCrudApi<ApiBill>('bills');
 export const billPaymentsApi = createCrudApi<ApiBillPayment>('bill_payments');
+
+export const backupApi = {
+  restore: (backup: unknown) =>
+    apiRequest<{ success: true; restoredRecords: number }>('/backup/restore', {
+      method: 'PUT',
+      body: JSON.stringify(backup),
+    }),
+};
 
 // User management API (admin only)
 export interface ApiUser {

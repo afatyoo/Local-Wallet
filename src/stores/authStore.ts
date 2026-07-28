@@ -8,7 +8,6 @@ interface User {
   username: string;
   role: string;
   createdAt: string;
-  token: string;
 }
 
 interface AuthState {
@@ -22,7 +21,7 @@ interface AuthState {
   verifyTwoFactor: (code: string) => Promise<boolean>;
   cancelTwoFactor: () => void;
   register: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   clearError: () => void;
   checkSession: () => Promise<void>;
 }
@@ -66,7 +65,6 @@ export const useAuthStore = create<AuthState>()(
               username: data.username,
               role: data.role,
               createdAt: data.createdAt,
-              token: data.token,
             };
             set({
               user,
@@ -105,7 +103,6 @@ export const useAuthStore = create<AuthState>()(
           username: data.username,
           role: data.role,
           createdAt: data.createdAt,
-          token: data.token,
         };
         set({
           user,
@@ -148,8 +145,9 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: () => {
+      logout: async () => {
         set({ user: null, isAuthenticated: false, tfaChallenge: null, error: null });
+        await authApi.logout();
       },
 
       clearError: () => {
@@ -157,26 +155,12 @@ export const useAuthStore = create<AuthState>()(
       },
 
       checkSession: async () => {
-        const { user } = get();
-        if (!user || !user.token) {
-          set({ user: null, isAuthenticated: false });
+        const { data, error } = await authApi.getSession();
+        if (!data || error) {
+          set({ user: null, isAuthenticated: false, error: null });
           return;
         }
-
-        // Decode JWT payload (base64) and check exp
-        try {
-          const payloadPart = user.token.split('.')[1];
-          if (!payloadPart) throw new Error('Invalid token structure');
-          const payload = JSON.parse(atob(payloadPart));
-          const now = Math.floor(Date.now() / 1000);
-          if (payload.exp && payload.exp < now) {
-            // Token expired — log out
-            set({ user: null, isAuthenticated: false, error: null });
-          }
-        } catch {
-          // Malformed token — log out
-          set({ user: null, isAuthenticated: false, error: null });
-        }
+        set({ user: data, isAuthenticated: true, error: null });
       },
     }),
     {
@@ -191,5 +175,10 @@ export const useAuthStore = create<AuthState>()(
 
 // Register logout handler untuk 401 responses
 setUnauthorizedHandler(() => {
-  useAuthStore.getState().logout();
+  useAuthStore.setState({
+    user: null,
+    isAuthenticated: false,
+    tfaChallenge: null,
+    error: null,
+  });
 });
