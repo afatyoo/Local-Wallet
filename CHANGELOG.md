@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Notifications**: In-app alerts for upcoming bills and debts plus budget threshold warnings.
 - **SMTP delivery**: Optional automatic email alerts with configurable scan interval and a test-email action.
 - **Expense receipts**: Attach and download JPG, PNG, WebP, or PDF evidence up to 5 MB.
+- **Receipt preview**: Preview images and PDFs before saving an expense or from the expense table.
 - **Activity and trash**: Finance changes are recorded and deleted records remain restorable for 30 days.
 
 ### Changed

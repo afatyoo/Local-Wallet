@@ -369,16 +369,21 @@ export async function uploadExpenseReceipt(expenseId: string, file: File) {
 }
 
 export async function downloadReceipt(id: string, filename: string) {
-  const response = await fetch(`${API_BASE_URL}/planning/receipts/${id}/file`, {
-    credentials: 'include',
-  });
-  if (!response.ok) throw new Error('Receipt download failed');
-  const url = URL.createObjectURL(await response.blob());
+  const blob = await fetchReceiptBlob(id);
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+export async function fetchReceiptBlob(id: string) {
+  const response = await fetch(`${API_BASE_URL}/planning/receipts/${id}/file`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error('Receipt download failed');
+  return response.blob();
 }
 
 // User management API (admin only)

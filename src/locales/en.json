@@ -321,5 +321,10 @@
   "planning_restore": "Restore",
   "budget_rollover": "Carry remaining budget to next month",
   "expense_receipt": "Receipt",
-  "expense_upload_receipt": "Upload Receipt"
+  "expense_upload_receipt": "Upload Receipt",
+  "expense_preview_receipt": "Preview Receipt",
+  "expense_download_receipt": "Download Receipt",
+  "expense_remove_attachment": "Remove attachment",
+  "expense_attachment_hint": "JPG, PNG, WebP, or PDF. Maximum 5 MB.",
+  "expense_attachment_failed": "The expense was saved, but the attachment upload failed"
 }
