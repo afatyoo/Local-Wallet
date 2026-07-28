@@ -7,7 +7,7 @@ const LOCALES_DIR = path.join(ROOT, 'src', 'locales');
 const META_FILE = path.join(LOCALES_DIR, '.i18n-meta.json');
 
 const BASE_LANG = 'id';
-const DEFAULT_TARGETS = ['en', 'es', 'fr', 'de', 'pt', 'ru', 'ar', 'hi', 'zh', 'ja', 'ko'];
+const DEFAULT_TARGETS = ['en'];
 
 // Provider:
 // - libretranslate (default): needs a LibreTranslate server (can be local via Docker)
@@ -21,6 +21,7 @@ const LIBRE_KEY = process.env.LIBRETRANSLATE_API_KEY || '';
 const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // example, change as needed
 const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+const RETRANSLATE_CHANGED = String(process.env.I18N_RETRANSLATE_CHANGED || '0') === '1';
 
 const TARGETS = (process.env.I18N_TARGETS || '')
   .split(',')
@@ -152,10 +153,8 @@ function getWorkKeys(baseDict, targetDict, metaForLang) {
     const srcText = baseDict[k];
     const h = sha1(srcText);
     const missing = !targetDict[k] || String(targetDict[k]).trim() === '';
-    const changed = metaForLang?.[k] && metaForLang[k] !== h;
-    // If key never existed in meta -> treat as missing
-    const noMetaYet = !metaForLang?.[k];
-    if (missing || changed || noMetaYet) work.push({ key: k, hash: h });
+    const changed = RETRANSLATE_CHANGED && metaForLang?.[k] && metaForLang[k] !== h;
+    if (missing || changed) work.push({ key: k, hash: h });
   }
   return work;
 }
@@ -185,6 +184,11 @@ async function main() {
     const target = readJson(file);
 
     if (!meta.languages[lang]) meta.languages[lang] = {};
+    for (const key of Object.keys(base)) {
+      if (target[key] && !meta.languages[lang][key]) {
+        meta.languages[lang][key] = sha1(base[key]);
+      }
+    }
     const workKeys = getWorkKeys(base, target, meta.languages[lang]);
     console.log(`\n[${lang}] to translate/update: ${workKeys.length}`);
 

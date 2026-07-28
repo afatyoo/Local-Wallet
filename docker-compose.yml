@@ -61,12 +61,13 @@ services:
       I18N_TARGETS: en
       TRANSLATE_PROVIDER: libretranslate
       LIBRETRANSLATE_URL: http://libretranslate:5000
+      I18N_SYNC_INTERVAL: ${I18N_SYNC_INTERVAL:-3600}
     depends_on:
       libretranslate:
         condition: service_healthy
       i18n_bootstrap:
         condition: service_completed_successfully
-    command: ["node", "scripts/i18n-auto.mjs"]
+    command: ["node", "scripts/i18n-watcher.mjs"]
     restart: unless-stopped
 
 
@@ -120,7 +121,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       JWT_SECRET: ${JWT_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:
@@ -143,8 +144,8 @@ services:
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:80"
     volumes:
-      # Serve locales langsung dari repo
-      - ./src/locales:/usr/share/nginx/html/locales:ro
+      # Serve locale hasil bootstrap/watcher tanpa rebuild frontend.
+      - locales_data:/usr/share/nginx/html/locales:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -156,4 +157,3 @@ volumes:
   mysql_data:
   locales_data:
   libretranslate_models:
-

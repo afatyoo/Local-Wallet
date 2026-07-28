@@ -36,8 +36,8 @@ Great for tracking **income, expenses, budgets, savings/investments, and recurri
 - 🕒 Rates are **cached** (lightweight and fast), with manual refresh whenever needed
 
 ### 🌐 Multi-language (Enhanced i18n)
-- 🌐 **Multi-language UI** (base language: `id`) — EN, ES, FR, DE, PT, RU, AR, HI, 中文, 日本語, 한국어
-- ⚙️ **Auto sync & auto translate** for new/changed keys (hash-based, so it avoids unnecessary work)
+- 🌐 **Bilingual UI** — Bahasa Indonesia (`id`) and English (`en`), selectable per user
+- ⚙️ **Auto sync & auto translate** for missing keys, with optional changed-key retranslation
 - 🐳 **LibreTranslate via Docker** support for auto-translation without paid APIs (optional)
 
 ---

@@ -7,10 +7,11 @@ const ROOT = process.cwd();
 // Inputs
 const BASE_FILE = process.env.BASE_FILE || path.join(ROOT, 'src', 'locales', 'id.json');
 const OUT_DIR = process.env.OUT_DIR || path.join(ROOT, 'public', 'locales');
+const SEED_DIR = process.env.SEED_LOCALES_DIR || path.join(ROOT, 'src', 'locales');
 const META_FILE = path.join(OUT_DIR, '.i18n-meta.json');
 
 const BASE_LANG = 'id';
-const DEFAULT_TARGETS = ['en', 'es', 'fr', 'de', 'pt', 'ru', 'ar', 'hi', 'zh', 'ja', 'ko'];
+const DEFAULT_TARGETS = ['en'];
 const TARGETS = (process.env.I18N_TARGETS || '')
   .split(',')
   .map((s) => s.trim())
@@ -22,6 +23,7 @@ const LIBRE_URL = (process.env.LIBRETRANSLATE_URL || 'http://libretranslate:5000
 const LIBRE_KEY = process.env.LIBRETRANSLATE_API_KEY || '';
 
 const WAIT_MAX_MS = Number(process.env.LIBRE_WAIT_MAX_MS || 60000);
+const RETRANSLATE_CHANGED = String(process.env.I18N_RETRANSLATE_CHANGED || '0') === '1';
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -116,9 +118,8 @@ function getWorkKeys(baseDict, targetDict, metaForLang) {
     const srcText = baseDict[k];
     const h = sha1(srcText);
     const missing = !targetDict[k] || String(targetDict[k]).trim() === '';
-    const changed = metaForLang?.[k] && metaForLang[k] !== h;
-    const noMetaYet = !metaForLang?.[k];
-    if (missing || changed || noMetaYet) work.push({ key: k, hash: h });
+    const changed = RETRANSLATE_CHANGED && metaForLang?.[k] && metaForLang[k] !== h;
+    if (missing || changed) work.push({ key: k, hash: h });
   }
   return work;
 }
@@ -151,15 +152,23 @@ async function main() {
     if (lang === BASE_LANG) continue;
 
     const file = path.join(OUT_DIR, `${lang}.json`);
-    const target = readJson(file);
+    const runtimeTarget = readJson(file);
+    const seedTarget = readJson(path.join(SEED_DIR, `${lang}.json`));
+    const target = { ...runtimeTarget, ...seedTarget };
 
     if (!meta.languages[lang]) meta.languages[lang] = {};
+    for (const key of Object.keys(base)) {
+      if (target[key]) {
+        meta.languages[lang][key] = sha1(base[key]);
+      }
+    }
 
     const workKeys = getWorkKeys(base, target, meta.languages[lang]);
     console.log(`\n[${lang}] keys to translate/update: ${workKeys.length}`);
 
     if (!workKeys.length) {
       console.log(`[${lang}] ✅ up to date`);
+      writeJson(file, target);
       continue;
     }
 

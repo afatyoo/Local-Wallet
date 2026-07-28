@@ -31,6 +31,7 @@ import {
   Cell,
   Legend,
 } from 'recharts';
+import type { Income, Expense } from '@/lib/db';
 
 const CHART_COLORS = [
   'hsl(160, 84%, 39%)',
@@ -42,6 +43,8 @@ const CHART_COLORS = [
   'hsl(50, 84%, 50%)',
   'hsl(280, 84%, 50%)',
 ];
+
+const isIncomeTransaction = (transaction: Income | Expense): transaction is Income => 'sumber' in transaction;
 
 export default function Dashboard() {
   const { user } = useAuthStore();
@@ -330,7 +333,7 @@ export default function Dashboard() {
               .sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime())
               .slice(0, 5)
               .map((transaction) => {
-                const isIncome = 'sumber' in transaction;
+                const isIncome = isIncomeTransaction(transaction);
                 return (
                   <div
                     key={transaction.id}
@@ -342,7 +345,7 @@ export default function Dashboard() {
                       </div>
                       <div>
                         <p className="font-medium">
-                          {isIncome ? (transaction as any).sumber : (transaction as any).nama}
+                          {isIncome ? transaction.sumber : transaction.nama}
                         </p>
                         <p className="text-sm text-muted-foreground">{transaction.kategori}</p>
                       </div>

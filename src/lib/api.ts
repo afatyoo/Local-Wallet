@@ -126,11 +126,11 @@ export const authApi = {
 };
 
 // Generic CRUD API factory
-function createCrudApi<T extends { id?: string }>(tableName: string) {
+function createCrudApi<T extends { id?: string; user_id: string }>(tableName: string) {
   return {
-    getAll: (userId: string) => apiRequest<T[]>(`/${tableName}/${userId}`),
+    getAll: () => apiRequest<T[]>(`/${tableName}`),
 
-    create: (data: Omit<T, 'id'>) =>
+    create: (data: Omit<T, 'id' | 'user_id'>) =>
       apiRequest<T>(`/${tableName}`, {
         method: 'POST',
         body: JSON.stringify(data),
@@ -198,6 +198,16 @@ export interface ApiSaving {
   catatan: string;
 }
 
+export interface ApiSavingsTarget {
+  id?: string;
+  user_id: string;
+  nama_target: string;
+  target_amount: number;
+  start_date: string;
+  target_date: string;
+  linked_account: string;
+}
+
 export interface ApiMasterData {
   id?: string;
   user_id: string;
@@ -232,6 +242,7 @@ export const incomesApi = createCrudApi<ApiIncome>('incomes');
 export const expensesApi = createCrudApi<ApiExpense>('expenses');
 export const budgetsApi = createCrudApi<ApiBudget>('budgets');
 export const savingsApi = createCrudApi<ApiSaving>('savings');
+export const savingsTargetsApi = createCrudApi<ApiSavingsTarget>('savings_targets');
 export const masterDataApi = createCrudApi<ApiMasterData>('master_data');
 export const billsApi = createCrudApi<ApiBill>('bills');
 export const billPaymentsApi = createCrudApi<ApiBillPayment>('bill_payments');
@@ -310,6 +321,18 @@ export const convertToFrontend = {
     setoran: Number(api.setoran),
     penarikan: Number(api.penarikan),
     catatan: api.catatan,
+  }),
+
+  savingsTarget: (api: ApiSavingsTarget) => ({
+    id: api.id!,
+    userId: api.user_id,
+    namaTarget: api.nama_target,
+    targetAmount: Number(api.target_amount),
+    currentAmount: 0,
+    startDate: api.start_date,
+    targetDate: api.target_date,
+    status: 'Aktif' as const,
+    linkedAccount: api.linked_account,
   }),
 
   masterData: (api: ApiMasterData) => ({

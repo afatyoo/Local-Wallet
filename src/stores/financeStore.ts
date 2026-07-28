@@ -5,6 +5,7 @@ import {
   expensesApi,
   budgetsApi,
   savingsApi,
+  savingsTargetsApi,
   masterDataApi,
   billsApi,
   billPaymentsApi,
@@ -13,10 +14,22 @@ import {
   type ApiExpense,
   type ApiBudget,
   type ApiSaving,
+  type ApiSavingsTarget,
   type ApiMasterData,
   type ApiBill,
   type ApiBillPayment,
 } from '@/lib/api';
+import { parseBackupData } from '@/lib/backupSchema';
+
+function requireApiData<T>(
+  response: { data?: T; error?: string },
+  action: string,
+): T {
+  if (response.error || response.data === undefined) {
+    throw new Error(response.error || `Gagal ${action}`);
+  }
+  return response.data;
+}
 
 // Frontend interfaces (camelCase)
 export interface Income {
@@ -65,6 +78,18 @@ export interface Saving {
   catatan: string;
 }
 
+export interface SavingsTarget {
+  id: string;
+  userId: string;
+  namaTarget: string;
+  targetAmount: number;
+  currentAmount: number;
+  startDate: string;
+  targetDate: string;
+  status: 'Aktif' | 'Tercapai';
+  linkedAccount: string;
+}
+
 export interface MasterData {
   id: string;
   userId: string;
@@ -99,6 +124,7 @@ interface FinanceState {
   expenses: Expense[];
   budgets: Budget[];
   savings: Saving[];
+  savingsTargets: SavingsTarget[];
   masterData: MasterData[];
   bills: Bill[];
   billPayments: BillPayment[];
@@ -125,6 +151,10 @@ interface FinanceState {
   addSaving: (userId: string, data: Omit<Saving, 'id' | 'userId'>) => Promise<void>;
   updateSaving: (id: string, data: Partial<Saving>) => Promise<void>;
   deleteSaving: (id: string) => Promise<void>;
+
+  addSavingsTarget: (data: Omit<SavingsTarget, 'id' | 'userId' | 'currentAmount' | 'status'>) => Promise<void>;
+  updateSavingsTarget: (id: string, data: Partial<SavingsTarget>) => Promise<void>;
+  deleteSavingsTarget: (id: string) => Promise<void>;
   
   addMasterData: (userId: string, type: MasterData['type'], value: string) => Promise<void>;
   deleteMasterData: (id: string) => Promise<void>;
@@ -145,6 +175,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   expenses: [],
   budgets: [],
   savings: [],
+  savingsTargets: [],
   masterData: [],
   bills: [],
   billPayments: [],
@@ -155,18 +186,19 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   setSelectedMonth: (month) => set({ selectedMonth: month }),
   clearError: () => set({ error: null }),
 
-  loadAllData: async (userId: string) => {
+  loadAllData: async (_userId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const [incomesRes, expensesRes, budgetsRes, savingsRes, masterDataRes, billsRes, billPaymentsRes] = 
+      const [incomesRes, expensesRes, budgetsRes, savingsRes, savingsTargetsRes, masterDataRes, billsRes, billPaymentsRes] =
         await Promise.all([
-          incomesApi.getAll(userId),
-          expensesApi.getAll(userId),
-          budgetsApi.getAll(userId),
-          savingsApi.getAll(userId),
-          masterDataApi.getAll(userId),
-          billsApi.getAll(userId),
-          billPaymentsApi.getAll(userId),
+          incomesApi.getAll(),
+          expensesApi.getAll(),
+          budgetsApi.getAll(),
+          savingsApi.getAll(),
+          savingsTargetsApi.getAll(),
+          masterDataApi.getAll(),
+          billsApi.getAll(),
+          billPaymentsApi.getAll(),
         ]);
 
       // Check for errors in any of the responses
@@ -175,6 +207,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         expensesRes.error,
         budgetsRes.error,
         savingsRes.error,
+        savingsTargetsRes.error,
         masterDataRes.error,
         billsRes.error,
         billPaymentsRes.error,
@@ -193,6 +226,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         expenses: (expensesRes.data || []).map(convertToFrontend.expense),
         budgets: (budgetsRes.data || []).map(convertToFrontend.budget),
         savings: (savingsRes.data || []).map(convertToFrontend.saving),
+        savingsTargets: (savingsTargetsRes.data || []).map(convertToFrontend.savingsTarget),
         masterData: (masterDataRes.data || []).map(convertToFrontend.masterData),
         bills: (billsRes.data || []).map(convertToFrontend.bill),
         billPayments: (billPaymentsRes.data || []).map(convertToFrontend.billPayment),
@@ -209,8 +243,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   // Income CRUD
   addIncome: async (userId, data) => {
     const bulan = getMonthFromDate(data.tanggal);
-    const apiData: Omit<ApiIncome, 'id'> = {
-      user_id: userId,
+    const apiData: Omit<ApiIncome, 'id' | 'user_id'> = {
       tanggal: data.tanggal,
       bulan,
       sumber: data.sumber,
@@ -253,8 +286,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   // Expense CRUD
   addExpense: async (userId, data) => {
     const bulan = getMonthFromDate(data.tanggal);
-    const apiData: Omit<ApiExpense, 'id'> = {
-      user_id: userId,
+    const apiData: Omit<ApiExpense, 'id' | 'user_id'> = {
       tanggal: data.tanggal,
       bulan,
       nama: data.nama,
@@ -296,8 +328,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
   // Budget CRUD
   addBudget: async (userId, data) => {
-    const apiData: Omit<ApiBudget, 'id'> = {
-      user_id: userId,
+    const apiData: Omit<ApiBudget, 'id' | 'user_id'> = {
       bulan: data.bulan,
       kategori: data.kategori,
       anggaran: data.anggaran,
@@ -328,8 +359,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   addSaving: async (userId, data) => {
-    const apiData: Omit<ApiSaving, 'id'> = {
-      user_id: userId,
+    const apiData: Omit<ApiSaving, 'id' | 'user_id'> = {
       tanggal: data.tanggal,
       jenis: data.jenis,
       nama_akun: data.namaAkun,
@@ -350,7 +380,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     // 🔻 SETORAN → EXPENSE (POTONG BALANCE)
     if (data.setoran > 0) {
       const expenseRes = await expensesApi.create({
-        user_id: userId,
         tanggal: data.tanggal,
         bulan,
         nama: `Setoran ${data.jenis} - ${data.namaAkun}`,
@@ -371,7 +400,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     // 🔺 PENARIKAN → INCOME (NABAH BALANCE)
     if (data.penarikan > 0) {
       const incomeRes = await incomesApi.create({
-        user_id: userId,
         tanggal: data.tanggal,
         bulan,
         sumber: `Penarikan ${data.jenis} - ${data.namaAkun}`,
@@ -443,7 +471,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     // 🔻 SETORAN → EXPENSE (POTONG BALANCE)
     if (updatedSaving.setoran > 0) {
       const expenseRes = await expensesApi.create({
-        user_id: userId,
         tanggal: updatedSaving.tanggal,
         bulan,
         nama: `Setoran ${updatedSaving.jenis} - ${updatedSaving.namaAkun}`,
@@ -464,7 +491,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     // 🔺 PENARIKAN → INCOME (NABAH BALANCE)
     if (updatedSaving.penarikan > 0) {
       const incomeRes = await incomesApi.create({
-        user_id: userId,
         tanggal: updatedSaving.tanggal,
         bulan,
         sumber: `Penarikan ${updatedSaving.jenis} - ${updatedSaving.namaAkun}`,
@@ -501,11 +527,56 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     }));
   },
 
+  addSavingsTarget: async (data) => {
+    const apiData: Omit<ApiSavingsTarget, 'id' | 'user_id'> = {
+      nama_target: data.namaTarget,
+      target_amount: data.targetAmount,
+      start_date: data.startDate,
+      target_date: data.targetDate,
+      linked_account: data.linkedAccount,
+    };
+    const response = await savingsTargetsApi.create(apiData);
+    if (response.error || !response.data) {
+      throw new Error(response.error || 'Gagal menambah target tabungan');
+    }
+    set((state) => ({
+      savingsTargets: [...state.savingsTargets, convertToFrontend.savingsTarget(response.data!)],
+    }));
+  },
+
+  updateSavingsTarget: async (id, data) => {
+    const apiData: Partial<ApiSavingsTarget> = {};
+    if (data.namaTarget !== undefined) apiData.nama_target = data.namaTarget;
+    if (data.targetAmount !== undefined) apiData.target_amount = data.targetAmount;
+    if (data.startDate !== undefined) apiData.start_date = data.startDate;
+    if (data.targetDate !== undefined) apiData.target_date = data.targetDate;
+    if (data.linkedAccount !== undefined) apiData.linked_account = data.linkedAccount;
+
+    const response = await savingsTargetsApi.update(id, apiData);
+    if (response.error || !response.data) {
+      throw new Error(response.error || 'Gagal memperbarui target tabungan');
+    }
+    set((state) => ({
+      savingsTargets: state.savingsTargets.map((target) =>
+        target.id === id ? convertToFrontend.savingsTarget(response.data!) : target
+      ),
+    }));
+  },
+
+  deleteSavingsTarget: async (id) => {
+    const response = await savingsTargetsApi.delete(id);
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    set((state) => ({
+      savingsTargets: state.savingsTargets.filter((target) => target.id !== id),
+    }));
+  },
+
 
   // Master Data
   addMasterData: async (userId, type, value) => {
-    const apiData: Omit<ApiMasterData, 'id'> = {
-      user_id: userId,
+    const apiData: Omit<ApiMasterData, 'id' | 'user_id'> = {
       type,
       value,
     };
@@ -522,8 +593,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
   // Bills CRUD
   addBill: async (userId, data) => {
-    const apiData: Omit<ApiBill, 'id'> = {
-      user_id: userId,
+    const apiData: Omit<ApiBill, 'id' | 'user_id'> = {
       nama: data.nama,
       kategori: data.kategori,
       jumlah: data.jumlah,
@@ -570,9 +640,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   // Bill Payments - also creates expense for balance tracking
 // Bill Payments - also creates expense for balance tracking
   addBillPayment: async (userId, data) => {
-    const apiPaymentData: Omit<ApiBillPayment, 'id'> = {
+    const apiPaymentData: Omit<ApiBillPayment, 'id' | 'user_id'> = {
       bill_id: data.billId,
-      user_id: userId,
       bulan: data.bulan,
       dibayar_pada: data.dibayarPada,
       jumlah_dibayar: data.jumlahDibayar,
@@ -601,8 +670,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       // - use data.bulan (selectedMonth) so it affects the correct month balance
       const tanggal = (data.dibayarPada || '').slice(0, 10); // works for ISO or "YYYY-MM-DD HH:MM:SS"
     
-      const apiExpenseData: Omit<ApiExpense, 'id'> = {
-        user_id: userId,
+      const apiExpenseData: Omit<ApiExpense, 'id' | 'user_id'> = {
         tanggal,
         bulan: data.bulan, // <-- this is key, so the selectedMonth balance decreases
         nama: `Tagihan: ${bill.nama}`,
@@ -650,14 +718,24 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
   // Export/Import
   exportData: async (userId) => {
-    const { incomes, expenses, budgets, savings, masterData, bills, billPayments } = get();
+    const {
+      incomes,
+      expenses,
+      budgets,
+      savings,
+      savingsTargets,
+      masterData,
+      bills,
+      billPayments,
+    } = get();
     const exportObj = {
-      version: 2,
+      version: 3,
       exportDate: new Date().toISOString(),
       incomes: incomes.filter((i) => i.userId === userId),
       expenses: expenses.filter((e) => e.userId === userId),
       budgets: budgets.filter((b) => b.userId === userId),
       savings: savings.filter((s) => s.userId === userId),
+      savingsTargets: savingsTargets.filter((target) => target.userId === userId),
       masterData: masterData.filter((m) => m.userId === userId),
       bills: bills.filter((b) => b.userId === userId),
       billPayments: billPayments.filter((p) => p.userId === userId),
@@ -667,123 +745,155 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
   importData: async (userId, jsonData) => {
     try {
-      const data = JSON.parse(jsonData);
-      
-      // Delete existing data
-      const { incomes, expenses, budgets, savings, masterData, bills, billPayments } = get();
-      
-      await Promise.all([
+      // Parse and validate the entire backup before touching existing data.
+      const data = parseBackupData(jsonData);
+
+      const {
+        incomes,
+        expenses,
+        budgets,
+        savings,
+        savingsTargets,
+        masterData,
+        bills,
+      } = get();
+
+      const deleteResults = await Promise.all([
         ...incomes.filter(i => i.userId === userId).map(i => incomesApi.delete(i.id)),
         ...expenses.filter(e => e.userId === userId).map(e => expensesApi.delete(e.id)),
         ...budgets.filter(b => b.userId === userId).map(b => budgetsApi.delete(b.id)),
         ...savings.filter(s => s.userId === userId).map(s => savingsApi.delete(s.id)),
+        ...savingsTargets
+          .filter((target) => target.userId === userId)
+          .map((target) => savingsTargetsApi.delete(target.id)),
         ...masterData.filter(m => m.userId === userId).map(m => masterDataApi.delete(m.id)),
         ...bills.filter(b => b.userId === userId).map(b => billsApi.delete(b.id)),
       ]);
+      const deleteError = deleteResults.find((result) => result.error)?.error;
+      if (deleteError) throw new Error(deleteError);
 
-      // Import new data
       const billIdMap = new Map<string, string>();
+      const savingIdMap = new Map<string, string>();
 
-      // Import incomes
-      for (const item of data.incomes || []) {
-        await incomesApi.create({
-          user_id: userId,
-          tanggal: item.tanggal,
-          bulan: item.bulan,
-          sumber: item.sumber,
-          kategori: item.kategori,
-          metode: item.metode,
-          jumlah: item.jumlah,
-          catatan: item.catatan,
-        });
+      for (const item of data.savings) {
+        const result = requireApiData(
+          await savingsApi.create({
+            tanggal: item.tanggal,
+            jenis: item.jenis,
+            nama_akun: item.namaAkun,
+            setoran: item.setoran,
+            penarikan: item.penarikan,
+            catatan: item.catatan,
+          }),
+          'mengimpor tabungan',
+        );
+        savingIdMap.set(item.id, result.id!);
       }
 
-      // Import expenses (excluding bill-linked ones)
-      for (const item of data.expenses || []) {
-        if (!item.billPaymentId) {
-          await expensesApi.create({
-            user_id: userId,
+      for (const item of data.bills) {
+        const result = requireApiData(
+          await billsApi.create({
+            nama: item.nama,
+            kategori: item.kategori,
+            jumlah: item.jumlah,
+            tanggal_jatuh_tempo: item.tanggalJatuhTempo,
+            mulai_dari: item.mulaiDari,
+            sampai_dengan: item.sampaiDengan,
+            catatan: item.catatan,
+            is_active: item.isActive,
+          }),
+          'mengimpor tagihan',
+        );
+        billIdMap.set(item.id, result.id!);
+      }
+
+      for (const item of data.incomes || []) {
+        requireApiData(
+          await incomesApi.create({
             tanggal: item.tanggal,
             bulan: item.bulan,
-            nama: item.nama,
+            sumber: item.sumber,
             kategori: item.kategori,
             metode: item.metode,
             jumlah: item.jumlah,
             catatan: item.catatan,
-          });
+            saving_id: item.savingId ? savingIdMap.get(item.savingId) : undefined,
+          }),
+          'mengimpor pemasukan',
+        );
+      }
+
+      for (const item of data.expenses || []) {
+        if (!item.billPaymentId) {
+          requireApiData(
+            await expensesApi.create({
+              tanggal: item.tanggal,
+              bulan: item.bulan,
+              nama: item.nama,
+              kategori: item.kategori,
+              metode: item.metode,
+              jumlah: item.jumlah,
+              catatan: item.catatan,
+              saving_id: item.savingId ? savingIdMap.get(item.savingId) : undefined,
+            }),
+            'mengimpor pengeluaran',
+          );
         }
       }
 
-      // Import budgets
       for (const item of data.budgets || []) {
-        await budgetsApi.create({
-          user_id: userId,
-          bulan: item.bulan,
-          kategori: item.kategori,
-          anggaran: item.anggaran,
-        });
+        requireApiData(
+          await budgetsApi.create({
+            bulan: item.bulan,
+            kategori: item.kategori,
+            anggaran: item.anggaran,
+          }),
+          'mengimpor anggaran',
+        );
       }
 
-      // Import savings
-      for (const item of data.savings || []) {
-        await savingsApi.create({
-          user_id: userId,
-          tanggal: item.tanggal,
-          jenis: item.jenis,
-          nama_akun: item.namaAkun,
-          setoran: item.setoran,
-          penarikan: item.penarikan,
-          catatan: item.catatan,
-        });
+      for (const item of data.savingsTargets) {
+        requireApiData(
+          await savingsTargetsApi.create({
+            nama_target: item.namaTarget,
+            target_amount: item.targetAmount,
+            start_date: item.startDate,
+            target_date: item.targetDate,
+            linked_account: item.linkedAccount,
+          }),
+          'mengimpor target tabungan',
+        );
       }
 
-      // Import master data
       for (const item of data.masterData || []) {
-        await masterDataApi.create({
-          user_id: userId,
-          type: item.type,
-          value: item.value,
-        });
+        requireApiData(
+          await masterDataApi.create({
+            type: item.type,
+            value: item.value,
+          }),
+          'mengimpor master data',
+        );
       }
 
-      // Import bills and create ID mapping
-      for (const item of data.bills || []) {
-        const { data: result } = await billsApi.create({
-          user_id: userId,
-          nama: item.nama,
-          kategori: item.kategori,
-          jumlah: item.jumlah,
-          tanggal_jatuh_tempo: item.tanggalJatuhTempo,
-          mulai_dari: item.mulaiDari,
-          sampai_dengan: item.sampaiDengan,
-          catatan: item.catatan,
-          is_active: item.isActive,
-        });
-        if (result) {
-          billIdMap.set(item.id, result.id!);
-        }
-      }
-
-      // Import bill payments with expense creation
       for (const item of data.billPayments || []) {
         const newBillId = billIdMap.get(item.billId);
         if (newBillId) {
-          const { data: paymentResult } = await billPaymentsApi.create({
-            bill_id: newBillId,
-            user_id: userId,
-            bulan: item.bulan,
-            dibayar_pada: item.dibayarPada,
-            jumlah_dibayar: item.jumlahDibayar,
-          });
-          
-          // Find corresponding expense from export and recreate it
-          if (paymentResult) {
-            const linkedExpense = (data.expenses || []).find(
-              (e: Expense) => e.billPaymentId === item.id
-            );
-            if (linkedExpense) {
+          const paymentResult = requireApiData(
+            await billPaymentsApi.create({
+              bill_id: newBillId,
+              bulan: item.bulan,
+              dibayar_pada: item.dibayarPada,
+              jumlah_dibayar: item.jumlahDibayar,
+            }),
+            'mengimpor pembayaran tagihan',
+          );
+
+          const linkedExpense = data.expenses.find(
+            (expense) => expense.billPaymentId === item.id
+          );
+          if (linkedExpense) {
+            requireApiData(
               await expensesApi.create({
-                user_id: userId,
                 tanggal: linkedExpense.tanggal,
                 bulan: linkedExpense.bulan,
                 nama: linkedExpense.nama,
@@ -792,8 +902,9 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
                 jumlah: linkedExpense.jumlah,
                 catatan: linkedExpense.catatan,
                 bill_payment_id: paymentResult.id,
-              });
-            }
+              }),
+              'mengimpor transaksi pembayaran tagihan',
+            );
           }
         }
       }

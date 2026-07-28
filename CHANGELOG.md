@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.0] — 2026-07-28
+
+### Added
+- **MySQL savings targets**: Savings targets now persist per user in the backend instead of browser local storage.
+- **Backup schema validation**: JSON backups are size-limited and validated before existing data is changed; version 2 backups remain compatible.
+- **Automated tests**: Added validation and backup-format tests using Node's built-in test runner.
+
+### Changed
+- **Bilingual UI**: Language selection is intentionally limited to Bahasa Indonesia and English.
+- **Smaller initial bundle**: Pages are route-split, while PDF and Excel engines load only when an export is requested.
+- **Lightweight XLSX export**: Replaced the unpatched SheetJS npm package with a small native workbook generator while preserving all five report sheets.
+- **Runtime translation flow**: The i18n watcher stays alive, writes to the locale volume used by Nginx, and preserves curated English translations.
+- **Backup version 3**: Savings targets and linked savings transaction references are included in exports.
+
+### Security
+- **Token-derived ownership**: User data endpoints no longer accept a user ID in list URLs or create payloads.
+- **Reference isolation**: Linked savings, bills, and bill payments must belong to the authenticated user.
+- **Safer updates**: Foreign records return 404, update validation is enforced, and complete records are returned after updates.
+- **Dependency hardening**: Updated vulnerable PDF, build, lint, and backend packages; replaced the vulnerable router and spreadsheet packages. Frontend and backend npm audits now report zero vulnerabilities.
+
+### Fixed
+- **Docker login via 127.0.0.1**: Added the local origin and configured Express proxy trust for Nginx.
+- **i18n watcher restart loop**: Replaced the one-shot command with a persistent interval worker.
+- **Storage messaging**: Settings now accurately describes MySQL primary storage and local backups.
+
+---
+
 ## [1.3.1] — 2026-03-28
 
 ### Added
@@ -28,7 +55,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.2.1] — 2026-03-26
 
->>>>>>> f50ab5f (fix: sync auth store logout on 401 responses)
 ### Added
 - **User Management page**: Added a new page for managing users with the ability to view, update, and delete users.
 - **User Management navigation**: Added a navigation link to the User Management page in the sidebar.
