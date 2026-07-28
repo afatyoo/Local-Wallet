@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.7.0] — 2026-07-28
+
+### Added
+- **Planning workspace**: Track assets, liabilities, debts, receivables, due dates, interest, and payment history.
+- **Smart categorization rules**: Expense names can automatically select a matching category.
+- **Budget rollover**: Optionally carry a positive remaining category budget into the next month.
+- **Notifications**: In-app alerts for upcoming bills and debts plus budget threshold warnings.
+- **SMTP delivery**: Optional automatic email alerts with configurable scan interval and a test-email action.
+- **Expense receipts**: Attach and download JPG, PNG, WebP, or PDF evidence up to 5 MB.
+- **Activity and trash**: Finance changes are recorded and deleted records remain restorable for 30 days.
+
+### Changed
+- **Backup version 4**: Net worth, debts, debt payments, and categorization rules are included in JSON export and atomic restore.
+- **Receipt persistence**: Receipt metadata survives expense deletion and reconnects when the expense is restored.
+- **Dependent restore**: Bill and debt payment history is preserved when its parent record is deleted and restored.
+
+### Security
+- **Upload restrictions**: Receipt uploads enforce an allowlist, single-file requests, and a 5 MB size limit.
+- **SMTP hardening**: Nodemailer file and URL access are disabled.
+- **Planning validation**: Dates, enum values, money values, and text lengths are validated or sanitized server-side.
+
+---
+
 ## [1.6.0] — 2026-07-28
 
 ### Added

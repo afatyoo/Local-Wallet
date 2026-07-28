@@ -14,9 +14,13 @@ Great for tracking **income, expenses, budgets, savings/investments, and recurri
 - 📊 **Dashboard**: income vs expense, balance summary, recent transactions
 - 💵 **Income**: CRUD + categories + payment methods
 - 💸 **Expenses**: CRUD + categories + payment methods
-- 🎯 **Budgets** per category and month
+- 🧾 **Expense receipts**: attach JPG, PNG, WebP, or PDF evidence (up to 5 MB)
+- 🎯 **Budgets** per category and month, with optional positive-balance rollover
 - 🐷 **Savings / Investments** tracking
 - 📅 **Bills** (recurring) + payment history
+- 🏦 **Planning**: net worth, debts/receivables, payment history, and smart categorization rules
+- 🔔 **Notifications**: bill, debt, and budget alerts with optional SMTP email delivery
+- ↩️ **Activity & Trash**: audit history and 30-day restore for deleted finance records
 - 📈 **Insights & Heatmap** (spending patterns)
 - 🧾 **Reports** + **Export to PDF**
 - ♻️ **Export/Import JSON** for backup/restore
@@ -102,6 +106,36 @@ docker compose up -d --build
 - Backend health: http://localhost:3000/api/health
 
 > Note: In Docker, the frontend uses `VITE_API_URL=/api` and Nginx proxies `/api/*` to the backend container.
+
+### Email notifications (optional)
+
+Configure any SMTP provider in `.env`, then rebuild the backend:
+
+```env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=wallet@example.com
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=wallet@example.com
+APP_URL=https://wallet.example.com
+NOTIFICATION_SCAN_INTERVAL_MS=21600000
+```
+
+- Use port `587` with `SMTP_SECURE=false` for STARTTLS, or port `465` with `SMTP_SECURE=true`.
+- For providers that require two-factor authentication, use an SMTP/API app password instead of the account password.
+- In **Planning → Notifications**, enter the recipient email, enable email delivery, save, and use **Test email**.
+- The backend scans automatically every six hours by default. The minimum supported interval is one minute.
+
+Apply changes:
+
+```bash
+docker compose up -d --build backend
+```
+
+### Receipt storage and backups
+
+Docker stores receipt files in the persistent `receipts_data` volume. JSON export version 4 includes net worth, debts, debt payments, and categorization rules, but does not embed receipt binaries. Include both `mysql_data` and `receipts_data` in server-level backups when receipt evidence must be recoverable.
 
 ### Reset the database (delete all data)
 

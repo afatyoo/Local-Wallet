@@ -10,6 +10,7 @@ import {
   billsApi,
   billPaymentsApi,
   backupApi,
+  planningApi,
   convertToFrontend,
   type ApiIncome,
   type ApiExpense,
@@ -66,6 +67,7 @@ export interface Budget {
   bulan: string;
   kategori: string;
   anggaran: number;
+  rollover?: boolean;
 }
 
 export interface Saving {
@@ -333,6 +335,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       bulan: data.bulan,
       kategori: data.kategori,
       anggaran: data.anggaran,
+      rollover: Boolean(data.rollover),
     };
     const { data: result } = await budgetsApi.create(apiData);
     if (result) {
@@ -345,6 +348,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     if (data.bulan !== undefined) updateData.bulan = data.bulan;
     if (data.kategori !== undefined) updateData.kategori = data.kategori;
     if (data.anggaran !== undefined) updateData.anggaran = data.anggaran;
+    if (data.rollover !== undefined) updateData.rollover = data.rollover;
 
     const { data: result } = await budgetsApi.update(id, updateData);
     if (result) {
@@ -729,8 +733,61 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       bills,
       billPayments,
     } = get();
+    const [netWorthResult, debtsResult, debtPaymentsResult, rulesResult] = await Promise.all([
+      planningApi.list('net-worth'),
+      planningApi.list('debts'),
+      planningApi.list('debt-payments'),
+      planningApi.list('rules'),
+    ]);
+    const planningError = [
+      netWorthResult.error,
+      debtsResult.error,
+      debtPaymentsResult.error,
+      rulesResult.error,
+    ].find(Boolean);
+    if (planningError) throw new Error(planningError);
+
+    const netWorthItems = (netWorthResult.data || []).map((item) => ({
+      id: item.id,
+      userId,
+      type: item.type,
+      name: item.name,
+      category: item.category,
+      value: Number(item.value),
+      asOfDate: item.as_of_date,
+      notes: String(item.notes || ''),
+    }));
+    const debtsForBackup = (debtsResult.data || []).map((item) => ({
+      id: item.id,
+      userId,
+      direction: item.direction,
+      name: item.name,
+      principal: Number(item.principal),
+      remaining: Number(item.remaining),
+      interestRate: Number(item.interest_rate),
+      dueDate: item.due_date || undefined,
+      status: item.status,
+      notes: String(item.notes || ''),
+    }));
+    const debtPayments = (debtPaymentsResult.data || []).map((item) => ({
+      id: item.id,
+      userId,
+      debtId: item.debt_id,
+      amount: Number(item.amount),
+      paidAt: item.paid_at,
+      notes: String(item.notes || ''),
+    }));
+    const categorizationRules = (rulesResult.data || []).map((item) => ({
+      id: item.id,
+      userId,
+      transactionType: item.transaction_type,
+      pattern: item.pattern,
+      category: item.category,
+      priority: Number(item.priority),
+      active: Boolean(item.active),
+    }));
     const exportObj = {
-      version: 3,
+      version: 4,
       exportDate: new Date().toISOString(),
       incomes: incomes.filter((i) => i.userId === userId),
       expenses: expenses.filter((e) => e.userId === userId),
@@ -740,6 +797,10 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       masterData: masterData.filter((m) => m.userId === userId),
       bills: bills.filter((b) => b.userId === userId),
       billPayments: billPayments.filter((p) => p.userId === userId),
+      netWorthItems,
+      debts: debtsForBackup,
+      debtPayments,
+      categorizationRules,
     };
     return JSON.stringify(exportObj, null, 2);
   },

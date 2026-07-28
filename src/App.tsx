@@ -21,6 +21,7 @@ const HealthScorePage = lazy(() => import("./pages/HealthScore"));
 const HeatmapPage = lazy(() => import("./pages/Heatmap"));
 const TargetsPage = lazy(() => import("./pages/Targets"));
 const UserManagementPage = lazy(() => import("./pages/UserManagement"));
+const PlanningPage = lazy(() => import("./pages/Planning"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ const App = () => (
             <Route path="/targets" element={<ProtectedRoute><TargetsPage /></ProtectedRoute>} />
             <Route path="/master-data" element={<ProtectedRoute><MasterDataPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="/planning" element={<ProtectedRoute><PlanningPage /></ProtectedRoute>} />
             <Route path="/user-management" element={<ProtectedRoute><UserManagementPage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
             </Routes>

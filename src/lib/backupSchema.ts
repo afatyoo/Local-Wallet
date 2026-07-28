@@ -43,6 +43,7 @@ const budgetSchema = z.object({
   bulan: monthSchema,
   kategori: z.string().min(1).max(100),
   anggaran: moneySchema,
+  rollover: z.boolean().optional().default(false),
 });
 
 const savingSchema = z.object({
@@ -94,11 +95,50 @@ const billPaymentSchema = z.object({
   jumlahDibayar: moneySchema,
 });
 
+const netWorthSchema = z.object({
+  ...ownedRecordSchema,
+  type: z.enum(['asset', 'liability']),
+  name: z.string().min(1).max(100),
+  category: z.string().min(1).max(100),
+  value: moneySchema,
+  asOfDate: dateSchema,
+  notes: textSchema,
+});
+
+const debtSchema = z.object({
+  ...ownedRecordSchema,
+  direction: z.enum(['owed', 'receivable']),
+  name: z.string().min(1).max(100),
+  principal: moneySchema,
+  remaining: moneySchema,
+  interestRate: moneySchema,
+  dueDate: dateSchema.optional(),
+  status: z.enum(['active', 'paid']),
+  notes: textSchema,
+});
+
+const debtPaymentSchema = z.object({
+  ...ownedRecordSchema,
+  debtId: idSchema,
+  amount: z.number().finite().positive(),
+  paidAt: dateSchema,
+  notes: textSchema,
+});
+
+const categorizationRuleSchema = z.object({
+  ...ownedRecordSchema,
+  transactionType: z.enum(['expense', 'income']),
+  pattern: z.string().min(1).max(100),
+  category: z.string().min(1).max(100),
+  priority: z.number().int(),
+  active: z.boolean(),
+});
+
 const collection = <T extends z.ZodTypeAny>(schema: T) =>
   z.array(schema).max(MAX_ITEMS_PER_COLLECTION);
 
 export const backupSchema = z.object({
-  version: z.union([z.literal(2), z.literal(3)]),
+  version: z.union([z.literal(2), z.literal(3), z.literal(4)]),
   exportDate: z.string().datetime(),
   incomes: collection(incomeSchema),
   expenses: collection(expenseSchema),
@@ -108,6 +148,10 @@ export const backupSchema = z.object({
   masterData: collection(masterDataSchema),
   bills: collection(billSchema),
   billPayments: collection(billPaymentSchema),
+  netWorthItems: collection(netWorthSchema).optional().default([]),
+  debts: collection(debtSchema).optional().default([]),
+  debtPayments: collection(debtPaymentSchema).optional().default([]),
+  categorizationRules: collection(categorizationRuleSchema).optional().default([]),
 }).strict().superRefine((backup, context) => {
   const billIds = new Set(backup.bills.map((bill) => bill.id));
   for (const payment of backup.billPayments) {
@@ -116,6 +160,16 @@ export const backupSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['billPayments'],
         message: `Payment ${payment.id} references an unknown bill`,
+      });
+    }
+  }
+  const debtIds = new Set(backup.debts.map((debt) => debt.id));
+  for (const payment of backup.debtPayments) {
+    if (!debtIds.has(payment.debtId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['debtPayments'],
+        message: `Debt payment ${payment.id} references an unknown debt`,
       });
     }
   }
@@ -129,6 +183,10 @@ export const backupSchema = z.object({
     ...backup.masterData,
     ...backup.bills,
     ...backup.billPayments,
+    ...backup.netWorthItems,
+    ...backup.debts,
+    ...backup.debtPayments,
+    ...backup.categorizationRules,
   ];
   const ids = new Set<string>();
   for (const item of duplicateCheck) {

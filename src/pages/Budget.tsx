@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
 import { Plus, Pencil, Trash2, Target, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Budget } from '@/stores/financeStore';
@@ -38,6 +39,7 @@ export default function BudgetPage() {
   const [formData, setFormData] = useState({
     kategori: '',
     anggaran: '',
+    rollover: false,
   });
 
   useEffect(() => {
@@ -63,27 +65,56 @@ export default function BudgetPage() {
 
   // Calculate realization per category
   const budgetWithRealization = useMemo(() => {
+    const byMonthAndCategory = new Map(
+      budgets.map((budget) => [`${budget.bulan}:${budget.kategori}`, budget]),
+    );
+    const effectiveCache = new Map<string, number>();
+    const effectiveFor = (budget: Budget): number => {
+      const cached = effectiveCache.get(budget.id);
+      if (cached !== undefined) return cached;
+      let carried = 0;
+      if (budget.rollover) {
+        const date = new Date(`${budget.bulan}-01T00:00:00Z`);
+        date.setUTCMonth(date.getUTCMonth() - 1);
+        const previousMonth = date.toISOString().slice(0, 7);
+        const previousBudget = byMonthAndCategory.get(`${previousMonth}:${budget.kategori}`);
+        if (previousBudget) {
+          const previousSpent = expenses
+            .filter((item) => item.bulan === previousMonth && item.kategori === budget.kategori)
+            .reduce((sum, item) => sum + item.jumlah, 0);
+          carried = Math.max(0, effectiveFor(previousBudget) - previousSpent);
+        }
+      }
+      const effective = budget.anggaran + carried;
+      effectiveCache.set(budget.id, effective);
+      return effective;
+    };
+
     return filteredBudgets.map((budget) => {
-      const realisasi = monthlyExpenses
-        .filter((e) => e.kategori === budget.kategori)
+      const effectiveBudget = effectiveFor(budget);
+      const carried = effectiveBudget - budget.anggaran;
+      const realisasi = expenses
+        .filter((e) => e.bulan === budget.bulan && e.kategori === budget.kategori)
         .reduce((sum, e) => sum + e.jumlah, 0);
-      const selisih = budget.anggaran - realisasi;
-      const percentage = budget.anggaran > 0 ? (realisasi / budget.anggaran) * 100 : 0;
-      const status = realisasi <= budget.anggaran ? 'safe' : 'over';
+      const selisih = effectiveBudget - realisasi;
+      const percentage = effectiveBudget > 0 ? (realisasi / effectiveBudget) * 100 : 0;
+      const status = realisasi <= effectiveBudget ? 'safe' : 'over';
       
       return {
         ...budget,
         realisasi,
+        carried,
+        effectiveBudget,
         selisih,
         percentage: Math.min(percentage, 100),
         status,
       };
     });
-  }, [filteredBudgets, monthlyExpenses]);
+  }, [filteredBudgets, budgets, expenses]);
 
   const totalBudget = useMemo(
-    () => filteredBudgets.reduce((sum, b) => sum + b.anggaran, 0),
-    [filteredBudgets]
+    () => budgetWithRealization.reduce((sum, budget) => sum + budget.effectiveBudget, 0),
+    [budgetWithRealization]
   );
 
   const totalRealisasi = useMemo(
@@ -95,6 +126,7 @@ export default function BudgetPage() {
     setFormData({
       kategori: '',
       anggaran: '',
+      rollover: false,
     });
     setEditingItem(null);
   };
@@ -105,6 +137,7 @@ export default function BudgetPage() {
       setFormData({
         kategori: item.kategori,
         anggaran: formatInputNumberFromBase(item.anggaran),
+        rollover: Boolean(item.rollover),
       });
     } else {
       resetForm();
@@ -150,6 +183,7 @@ export default function BudgetPage() {
         await updateBudget(editingItem.id, {
           kategori: formData.kategori,
           anggaran: amount,
+          rollover: formData.rollover,
         });
         toast({ title: t('common_success'), description: t('common_success') });
       } else {
@@ -157,6 +191,7 @@ export default function BudgetPage() {
           bulan: selectedMonth,
           kategori: formData.kategori,
           anggaran: amount,
+          rollover: formData.rollover,
         });
         toast({ title: t('common_success'), description: t('common_success') });
       }
@@ -236,6 +271,14 @@ export default function BudgetPage() {
                     placeholder="0"
                     value={formData.anggaran}
                     onChange={(e) => setFormData({ ...formData, anggaran: e.target.value })}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <Label htmlFor="budget-rollover">{t('budget_rollover')}</Label>
+                  <Switch
+                    id="budget-rollover"
+                    checked={formData.rollover}
+                    onCheckedChange={(rollover) => setFormData({ ...formData, rollover })}
                   />
                 </div>
               </div>
@@ -322,7 +365,7 @@ export default function BudgetPage() {
                   />
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">{t('budget_limit')}</span>
-                    <span className="font-mono">{formatCurrency(budget.anggaran)}</span>
+                    <span className="font-mono">{formatCurrency(budget.effectiveBudget)}</span>
                   </div>
                   <div className="flex justify-between text-sm pt-2 border-t border-border/50">
                     <span className="text-muted-foreground">{t('budget_remaining')}</span>

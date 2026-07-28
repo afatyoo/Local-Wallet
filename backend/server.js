@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
+import { unlinkSync } from 'node:fs';
+import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
@@ -16,6 +18,7 @@ import {
 } from './session.js';
 import { createBackupRouter } from './routes/backup.js';
 import { createCrudRouter } from './routes/crud.js';
+import { createPlanningRouter, startNotificationWorker } from './routes/planning.js';
 import {
   createOtpAuthUri,
   decryptTotpSecret,
@@ -28,6 +31,7 @@ import {
 } from './twoFactor.js';
 
 dotenv.config();
+const RECEIPT_DIR = process.env.RECEIPT_DIR || '/app/uploads';
 
 // -------------------------
 // Security: JWT_SECRET must be set
@@ -441,6 +445,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/backup', createBackupRouter({ pool, authenticate: authenticateToken }));
+app.use('/api/planning', createPlanningRouter({ pool, authenticate: authenticateToken }));
 app.use('/api', createCrudRouter({ pool, authenticate: authenticateToken }));
 
 // -------------------------
@@ -535,12 +540,19 @@ app.delete('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res)
       return res.status(400).json({ error: 'Cannot delete your own account' });
     }
 
+    const [receipts] = await pool.query(
+      'SELECT stored_name FROM receipts WHERE user_id = ?',
+      [userId],
+    );
     const [result] = await pool.query('DELETE FROM users WHERE id = ?', [userId]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    receipts.forEach((receipt) => {
+      try { unlinkSync(path.join(RECEIPT_DIR, receipt.stored_name)); } catch { /* already absent */ }
+    });
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     console.error('DELETE /users/:id error:', error);
@@ -612,6 +624,9 @@ app.delete('/api/users/:id/tfa', authenticateToken, authorizeAdmin, async (req, 
 
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
+  if (error?.code === 'LIMIT_FILE_SIZE' || error?.message === 'Unsupported receipt file type') {
+    return res.status(400).json({ error: error.message });
+  }
   console.error('Unhandled request error:', error);
   return res.status(500).json({ error: 'Internal server error' });
 });
@@ -623,6 +638,7 @@ initializeDatabase(pool)
     app.listen(PORT, () => {
       console.log(`Backend server running on port ${PORT}`);
     });
+    startNotificationWorker(pool);
   })
   .catch((err) => {
     console.error('Failed to initialize database:', err);

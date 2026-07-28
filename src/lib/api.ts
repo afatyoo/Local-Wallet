@@ -223,6 +223,7 @@ export interface ApiBudget {
   bulan: string;
   kategori: string;
   anggaran: number;
+  rollover?: boolean;
 }
 
 export interface ApiSaving {
@@ -293,6 +294,93 @@ export const backupApi = {
     }),
 };
 
+export interface PlanningRecord {
+  id: string;
+  [key: string]: unknown;
+}
+
+export const planningApi = {
+  list: <T extends PlanningRecord>(resource: string) =>
+    apiRequest<T[]>(`/planning/${resource}`),
+  create: <T extends PlanningRecord>(resource: string, data: Record<string, unknown>) =>
+    apiRequest<T>(`/planning/${resource}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: <T extends PlanningRecord>(resource: string, id: string, data: Record<string, unknown>) =>
+    apiRequest<T>(`/planning/${resource}/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (resource: string, id: string) =>
+    apiRequest<{ success: true }>(`/planning/${resource}/${id}`, { method: 'DELETE' }),
+  payDebt: (id: string, data: { amount: number; paid_at: string; notes?: string }) =>
+    apiRequest<{ success: true; remaining: number }>(`/planning/debts/${id}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getPreferences: () => apiRequest<Record<string, unknown>>('/planning/preferences'),
+  savePreferences: (data: Record<string, unknown>) =>
+    apiRequest<{ success: true }>('/planning/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  refreshNotifications: () =>
+    apiRequest<{ success: true }>('/planning/notifications/refresh', { method: 'POST' }),
+  markNotificationRead: (id: string) =>
+    apiRequest<{ success: true }>(`/planning/notifications/${id}/read`, { method: 'PUT' }),
+  sendTestEmail: () =>
+    apiRequest<{ success: true }>('/planning/email/test', { method: 'POST' }),
+  restoreTrash: (id: string) =>
+    apiRequest<{ success: true }>(`/planning/trash/${id}/restore`, { method: 'POST' }),
+  listReceipts: (expenseId: string) =>
+    apiRequest<Array<{ id: string; original_name: string; mime_type: string; size: number }>>(
+      `/planning/expenses/${expenseId}/receipts`,
+    ),
+  listAllReceipts: () =>
+    apiRequest<Array<{
+      id: string;
+      expense_id: string;
+      original_name: string;
+      mime_type: string;
+      size: number;
+    }>>('/planning/receipts'),
+  deleteReceipt: (id: string) =>
+    apiRequest<{ success: true }>(`/planning/receipts/${id}`, { method: 'DELETE' }),
+};
+
+export async function uploadExpenseReceipt(expenseId: string, file: File) {
+  const body = new FormData();
+  body.append('receipt', file);
+  const headers: Record<string, string> = {};
+  const csrfToken = getCsrfToken();
+  if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  const response = await fetch(`${API_BASE_URL}/planning/expenses/${expenseId}/receipts`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Receipt upload failed');
+  }
+  return response.json();
+}
+
+export async function downloadReceipt(id: string, filename: string) {
+  const response = await fetch(`${API_BASE_URL}/planning/receipts/${id}/file`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error('Receipt download failed');
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 // User management API (admin only)
 export interface ApiUser {
   id: string;
@@ -360,6 +448,7 @@ export const convertToFrontend = {
     bulan: api.bulan,
     kategori: api.kategori,
     anggaran: Number(api.anggaran),
+    rollover: Boolean(api.rollover),
   }),
 
   saving: (api: ApiSaving) => ({
