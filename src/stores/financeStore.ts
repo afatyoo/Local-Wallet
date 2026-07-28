@@ -143,7 +143,7 @@ interface FinanceState {
   updateIncome: (id: string, data: Partial<Income>) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
   
-  addExpense: (userId: string, data: Omit<Expense, 'id' | 'userId' | 'bulan'>) => Promise<void>;
+  addExpense: (userId: string, data: Omit<Expense, 'id' | 'userId' | 'bulan'>) => Promise<Expense>;
   updateExpense: (id: string, data: Partial<Expense>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   
@@ -298,10 +298,10 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       jumlah: data.jumlah,
       catatan: data.catatan,
     };
-    const { data: result } = await expensesApi.create(apiData);
-    if (result) {
-      set((state) => ({ expenses: [...state.expenses, convertToFrontend.expense(result)] }));
-    }
+    const result = requireApiData(await expensesApi.create(apiData), 'menambahkan pengeluaran');
+    const created = convertToFrontend.expense(result);
+    set((state) => ({ expenses: [...state.expenses, created] }));
+    return created;
   },
 
   updateExpense: async (id, data) => {

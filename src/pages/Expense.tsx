@@ -32,10 +32,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Pencil, Trash2, ArrowDownCircle, Download, Paperclip } from 'lucide-react';
+import { Plus, Pencil, Trash2, ArrowDownCircle, Download, Eye, Paperclip, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Expense } from '@/stores/financeStore';
-import { downloadReceipt, planningApi, uploadExpenseReceipt } from '@/lib/api';
+import {
+  downloadReceipt,
+  fetchReceiptBlob,
+  planningApi,
+  uploadExpenseReceipt,
+} from '@/lib/api';
+
+interface ReceiptItem {
+  id: string;
+  original_name: string;
+  mime_type: string;
+  size: number;
+}
 
 export default function ExpensePage() {
   const { user } = useAuthStore();
@@ -45,7 +57,12 @@ export default function ExpensePage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Expense | null>(null);
   const [rules, setRules] = useState<Array<{ pattern: string; category: string; active: boolean | number }>>([]);
-  const [receipts, setReceipts] = useState<Record<string, Array<{ id: string; original_name: string }>>>({});
+  const [receipts, setReceipts] = useState<Record<string, ReceiptItem[]>>({});
+  const [pendingReceipt, setPendingReceipt] = useState<File | null>(null);
+  const [previewReceipt, setPreviewReceipt] = useState<ReceiptItem | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
     nama: '',
@@ -54,6 +71,18 @@ export default function ExpensePage() {
     jumlah: '',
     catatan: '',
   });
+  const pendingReceiptUrl = useMemo(
+    () => pendingReceipt ? URL.createObjectURL(pendingReceipt) : null,
+    [pendingReceipt],
+  );
+
+  useEffect(() => () => {
+    if (pendingReceiptUrl) URL.revokeObjectURL(pendingReceiptUrl);
+  }, [pendingReceiptUrl]);
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   useEffect(() => {
     if (user?.id) {
@@ -77,7 +106,7 @@ export default function ExpensePage() {
 
   useEffect(() => {
     planningApi.listAllReceipts().then((result) => {
-      const grouped: Record<string, Array<{ id: string; original_name: string }>> = {};
+      const grouped: Record<string, ReceiptItem[]> = {};
       (result.data || []).forEach((receipt) => {
         (grouped[receipt.expense_id] ||= []).push(receipt);
       });
@@ -129,6 +158,11 @@ export default function ExpensePage() {
     [filteredExpenses]
   );
 
+  const clearPendingReceipt = () => {
+    setPendingReceipt(null);
+    if (receiptInputRef.current) receiptInputRef.current.value = '';
+  };
+
   const resetForm = () => {
     setFormData({
       tanggal: new Date().toISOString().split('T')[0],
@@ -138,10 +172,12 @@ export default function ExpensePage() {
       jumlah: '',
       catatan: '',
     });
+    clearPendingReceipt();
     setEditingItem(null);
   };
 
   const handleOpenDialog = (item?: Expense) => {
+    clearPendingReceipt();
     if (item) {
       setEditingItem(item);
       setFormData({
@@ -179,6 +215,7 @@ export default function ExpensePage() {
     }
 
     try {
+      let expenseId: string;
       if (editingItem) {
         await updateExpense(editingItem.id, {
           tanggal: formData.tanggal,
@@ -188,9 +225,9 @@ export default function ExpensePage() {
           jumlah: amount,
           catatan: formData.catatan,
         });
-        toast({ title: t('common_success'), description: t('common_success') });
+        expenseId = editingItem.id;
       } else {
-        await addExpense(user!.id, {
+        const created = await addExpense(user!.id, {
           tanggal: formData.tanggal,
           nama: formData.nama,
           kategori: formData.kategori,
@@ -198,8 +235,24 @@ export default function ExpensePage() {
           jumlah: amount,
           catatan: formData.catatan,
         });
-        toast({ title: t('common_success'), description: t('common_success') });
+        expenseId = created.id;
       }
+
+      let attachmentError: string | null = null;
+      if (pendingReceipt) {
+        try {
+          await uploadExpenseReceipt(expenseId, pendingReceipt);
+          const result = await planningApi.listReceipts(expenseId);
+          setReceipts((current) => ({ ...current, [expenseId]: result.data || [] }));
+        } catch (error) {
+          attachmentError = error instanceof Error ? error.message : t('common_error');
+        }
+      }
+      toast({
+        title: attachmentError ? t('expense_attachment_failed') : t('common_success'),
+        description: attachmentError || t('common_success'),
+        variant: attachmentError ? 'destructive' : 'default',
+      });
       setIsDialogOpen(false);
       resetForm();
     } catch (error) {
@@ -237,6 +290,43 @@ export default function ExpensePage() {
     input.click();
   };
 
+  const handlePendingReceipt = (file?: File) => {
+    if (!file) {
+      clearPendingReceipt();
+      return;
+    }
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowed.includes(file.type) || file.size > 5 * 1024 * 1024) {
+      clearPendingReceipt();
+      toast({
+        title: t('common_error'),
+        description: t('expense_attachment_hint'),
+        variant: 'destructive',
+      });
+      return;
+    }
+    setPendingReceipt(file);
+  };
+
+  const handlePreviewReceipt = async (receipt: ReceiptItem) => {
+    setPreviewReceipt(receipt);
+    setIsPreviewLoading(true);
+    setPreviewUrl(null);
+    try {
+      const blob = await fetchReceiptBlob(receipt.id);
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch (error) {
+      setPreviewReceipt(null);
+      toast({
+        title: t('common_error'),
+        description: error instanceof Error ? error.message : t('common_error'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -259,7 +349,7 @@ export default function ExpensePage() {
                 {t('expense_add')}
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>{editingItem ? t('expense_edit') : t('expense_add')}</DialogTitle>
                 <DialogDescription>
@@ -344,6 +434,46 @@ export default function ExpensePage() {
                     onChange={(e) => setFormData({ ...formData, catatan: e.target.value })}
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="expense-receipt">{t('expense_receipt')}</Label>
+                  <Input
+                    ref={receiptInputRef}
+                    id="expense-receipt"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(event) => handlePendingReceipt(event.target.files?.[0])}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('expense_attachment_hint')}</p>
+                  {pendingReceipt && pendingReceiptUrl && (
+                    <div className="relative overflow-hidden rounded-md border bg-muted/20">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="icon"
+                        className="absolute right-2 top-2 z-10"
+                        title={t('expense_remove_attachment')}
+                        onClick={clearPendingReceipt}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                      {pendingReceipt.type === 'application/pdf' ? (
+                        <iframe
+                          src={pendingReceiptUrl}
+                          title={pendingReceipt.name}
+                          className="h-48 w-full bg-background"
+                        />
+                      ) : (
+                        <img
+                          src={pendingReceiptUrl}
+                          alt={pendingReceipt.name}
+                          className="h-48 w-full object-contain"
+                        />
+                      )}
+                      <p className="truncate border-t px-3 py-2 text-xs">{pendingReceipt.name}</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <DialogFooter>
@@ -408,13 +538,10 @@ export default function ExpensePage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            title={t('expense_receipt')}
-                            onClick={() => downloadReceipt(
-                              receipts[expense.id][0].id,
-                              receipts[expense.id][0].original_name,
-                            )}
+                            title={t('expense_preview_receipt')}
+                            onClick={() => handlePreviewReceipt(receipts[expense.id][0])}
                           >
-                            <Download className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </Button>
                         )}
                         <Button
@@ -446,6 +573,50 @@ export default function ExpensePage() {
             </TableBody>
           </Table>
         </div>
+
+        <Dialog
+          open={Boolean(previewReceipt)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPreviewReceipt(null);
+              setPreviewUrl(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{previewReceipt?.original_name}</DialogTitle>
+              <DialogDescription>{t('expense_preview_receipt')}</DialogDescription>
+            </DialogHeader>
+            <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-md border bg-muted/20">
+              {isPreviewLoading && <p className="text-muted-foreground">{t('common_loading')}</p>}
+              {!isPreviewLoading && previewUrl && previewReceipt?.mime_type === 'application/pdf' && (
+                <iframe
+                  src={previewUrl}
+                  title={previewReceipt.original_name}
+                  className="h-[65vh] w-full bg-background"
+                />
+              )}
+              {!isPreviewLoading && previewUrl && previewReceipt?.mime_type.startsWith('image/') && (
+                <img
+                  src={previewUrl}
+                  alt={previewReceipt.original_name}
+                  className="max-h-[65vh] w-full object-contain"
+                />
+              )}
+            </div>
+            <DialogFooter>
+              {previewReceipt && (
+                <Button
+                  onClick={() => downloadReceipt(previewReceipt.id, previewReceipt.original_name)}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {t('expense_download_receipt')}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

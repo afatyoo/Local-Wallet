@@ -321,5 +321,10 @@
   "planning_restore": "Pulihkan",
   "budget_rollover": "Bawa sisa budget ke bulan berikutnya",
   "expense_receipt": "Bukti",
-  "expense_upload_receipt": "Upload Bukti"
+  "expense_upload_receipt": "Upload Bukti",
+  "expense_preview_receipt": "Preview Bukti",
+  "expense_download_receipt": "Download Bukti",
+  "expense_remove_attachment": "Hapus attachment",
+  "expense_attachment_hint": "JPG, PNG, WebP, atau PDF. Maksimal 5 MB.",
+  "expense_attachment_failed": "Transaksi tersimpan, tetapi attachment gagal di-upload"
 }
