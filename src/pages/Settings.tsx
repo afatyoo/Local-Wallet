@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
-import { useCurrencyStore, SUPPORTED_CURRENCIES } from '@/stores/currencyStore';
+import { useCurrencyStore, SUPPORTED_CURRENCIES, type CurrencyCode } from '@/stores/currencyStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useBackup } from '@/hooks/useBackup';
 import { useTranslation, languages } from '@/lib/i18n';
@@ -247,8 +247,9 @@ export default function SettingsPage() {
               <Select
                 value={displayCurrency}
                 onValueChange={(value) => {
-                  setDisplayCurrency(value as any);
-                  if (value !== 'IDR') {
+                  const currency = value as CurrencyCode;
+                  setDisplayCurrency(currency);
+                  if (currency !== 'IDR') {
                     refreshRates();
                   }
                 }}
@@ -446,12 +447,12 @@ export default function SettingsPage() {
                   <CheckCircle className="w-4 h-4 text-income" />
                   Database
                 </div>
-                <p className="font-medium">IndexedDB</p>
+                <p className="font-medium">MySQL</p>
               </div>
               <div className="p-4 rounded-lg bg-secondary/30">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                   <CheckCircle className="w-4 h-4 text-income" />
-                  Session
+                  Session &amp; local backup
                 </div>
                 <p className="font-medium">LocalStorage</p>
               </div>

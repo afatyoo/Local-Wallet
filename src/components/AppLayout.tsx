@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate } from '@/lib/router';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { useCurrencyStore } from '@/stores/currencyStore';

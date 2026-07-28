@@ -1,19 +1,9 @@
 import { useMemo } from 'react';
-import { useFinanceStore } from '@/stores/financeStore';
+import { useFinanceStore, type SavingsTarget } from '@/stores/financeStore';
 import { formatCurrency } from '@/lib/utils';
 import { differenceInMonths, parseISO, format } from 'date-fns';
 
-export interface SavingsTarget {
-  id: string;
-  userId: string;
-  namaTarget: string;
-  targetAmount: number;
-  currentAmount: number;
-  startDate: string;
-  targetDate: string;
-  status: 'Aktif' | 'Tercapai';
-  linkedAccount: string; // nama akun tabungan yang terkait
-}
+export type { SavingsTarget } from '@/stores/financeStore';
 
 interface Milestone {
   percentage: number;
@@ -42,7 +32,7 @@ interface TargetInsight {
  * Hook untuk mengelola target tabungan dengan milestone
  * 
  * Cara kerja:
- * 1. Ambil data target dari localStorage
+ * 1. Ambil data target dari MySQL melalui finance store
  * 2. Hitung currentAmount dari data savings yang terkait
  * 3. Hitung progress dan milestone
  * 4. Generate insights otomatis
@@ -157,68 +147,4 @@ export function useSavingsTargets() {
     calculateProgress,
     generateInsights,
   };
-}
-
-// Key untuk localStorage
-export const TARGETS_STORAGE_KEY = 'finance_savings_targets';
-
-// Fungsi helper untuk CRUD target di localStorage
-export function getTargetsFromStorage(userId: string): SavingsTarget[] {
-  try {
-    const stored = localStorage.getItem(TARGETS_STORAGE_KEY);
-    if (!stored) return [];
-    const allTargets: SavingsTarget[] = JSON.parse(stored);
-    return allTargets.filter((t) => t.userId === userId);
-  } catch {
-    return [];
-  }
-}
-
-export function saveTargetsToStorage(targets: SavingsTarget[]): void {
-  try {
-    // Get all targets from storage
-    const stored = localStorage.getItem(TARGETS_STORAGE_KEY);
-    let allTargets: SavingsTarget[] = stored ? JSON.parse(stored) : [];
-    
-    // Remove targets for this user
-    if (targets.length > 0) {
-      const userId = targets[0].userId;
-      allTargets = allTargets.filter((t) => t.userId !== userId);
-    }
-    
-    // Add updated targets
-    allTargets = [...allTargets, ...targets];
-    
-    localStorage.setItem(TARGETS_STORAGE_KEY, JSON.stringify(allTargets));
-  } catch (error) {
-    console.error('Error saving targets:', error);
-  }
-}
-
-export function addTarget(target: SavingsTarget): void {
-  const targets = getTargetsFromStorage(target.userId);
-  targets.push(target);
-  saveTargetsToStorage(targets);
-}
-
-export function updateTarget(targetId: string, updates: Partial<SavingsTarget>): void {
-  const stored = localStorage.getItem(TARGETS_STORAGE_KEY);
-  if (!stored) return;
-  
-  const allTargets: SavingsTarget[] = JSON.parse(stored);
-  const updatedTargets = allTargets.map((t) => 
-    t.id === targetId ? { ...t, ...updates } : t
-  );
-  
-  localStorage.setItem(TARGETS_STORAGE_KEY, JSON.stringify(updatedTargets));
-}
-
-export function deleteTarget(targetId: string): void {
-  const stored = localStorage.getItem(TARGETS_STORAGE_KEY);
-  if (!stored) return;
-  
-  const allTargets: SavingsTarget[] = JSON.parse(stored);
-  const filteredTargets = allTargets.filter((t) => t.id !== targetId);
-  
-  localStorage.setItem(TARGETS_STORAGE_KEY, JSON.stringify(filteredTargets));
 }

@@ -5,7 +5,7 @@ const ROOT = process.cwd();
 const LOCALES_DIR = path.join(ROOT, 'src', 'locales');
 
 const BASE_LANG = 'id';
-const DEFAULT_TARGETS = ['en', 'es', 'fr', 'de', 'pt', 'ru', 'ar', 'hi', 'zh', 'ja', 'ko'];
+const DEFAULT_TARGETS = ['en'];
 
 const TARGETS = (process.env.I18N_TARGETS || '')
   .split(',')

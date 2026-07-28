@@ -1,17 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
-import { 
-  useSavingsTargets, 
-  SavingsTarget,
-  getTargetsFromStorage,
-  saveTargetsToStorage,
-  deleteTarget as deleteTargetFromStorage
-} from '@/hooks/useSavingsTargets';
+import { useSavingsTargets, type SavingsTarget } from '@/hooks/useSavingsTargets';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
 import { formatCurrency, parseCurrencyInputToBase, formatInputNumberFromBase } from '@/lib/utils';
-import { v4 as uuidv4 } from 'uuid';
 import { 
   Target, 
   Plus, 
@@ -50,12 +43,17 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function TargetsPage() {
   const { user } = useAuthStore();
-  const { loadAllData } = useFinanceStore();
+  const {
+    loadAllData,
+    savingsTargets: targets,
+    addSavingsTarget,
+    updateSavingsTarget,
+    deleteSavingsTarget,
+  } = useFinanceStore();
   const { accountNames, calculateProgress, generateInsights } = useSavingsTargets();
   const { t } = useTranslation();
   const { toast } = useToast();
 
-  const [targets, setTargets] = useState<SavingsTarget[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState<SavingsTarget | null>(null);
   const [formData, setFormData] = useState({
@@ -70,7 +68,6 @@ export default function TargetsPage() {
   useEffect(() => {
     if (user?.id) {
       loadAllData(user.id);
-      setTargets(getTargetsFromStorage(user.id));
     }
   }, [user?.id, loadAllData]);
 
@@ -127,7 +124,7 @@ export default function TargetsPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.namaTarget || !formData.targetAmount || !formData.targetDate || !formData.linkedAccount) {
       toast({
         title: t('common_error'),
@@ -147,55 +144,50 @@ export default function TargetsPage() {
       return;
     }
 
-    let updatedTargets: SavingsTarget[];
-
-    if (editingTarget) {
-      updatedTargets = targets.map((t) =>
-        t.id === editingTarget.id
-          ? {
-              ...t,
-              namaTarget: formData.namaTarget,
-              targetAmount,
-              startDate: formData.startDate,
-              targetDate: formData.targetDate,
-              linkedAccount: formData.linkedAccount,
-            }
-          : t
-      );
-    } else {
-      const newTarget: SavingsTarget = {
-        id: uuidv4(),
-        userId: user!.id,
+    try {
+      const targetData = {
         namaTarget: formData.namaTarget,
         targetAmount,
-        currentAmount: 0,
         startDate: formData.startDate,
         targetDate: formData.targetDate,
-        status: 'Aktif',
         linkedAccount: formData.linkedAccount,
       };
-      updatedTargets = [...targets, newTarget];
-    }
+      if (editingTarget) {
+        await updateSavingsTarget(editingTarget.id, targetData);
+      } else {
+        await addSavingsTarget(targetData);
+      }
 
-    saveTargetsToStorage(updatedTargets);
-    setTargets(updatedTargets);
-    setIsDialogOpen(false);
-    resetForm();
-
-    toast({
-      title: t('common_success'),
-      description: editingTarget ? t('target_updated') : t('target_added'),
-    });
-  };
-
-  const handleDelete = (targetId: string) => {
-    if (confirm(t('target_delete_confirm'))) {
-      deleteTargetFromStorage(targetId);
-      setTargets(targets.filter((t) => t.id !== targetId));
+      setIsDialogOpen(false);
+      resetForm();
       toast({
         title: t('common_success'),
-        description: t('target_deleted'),
+        description: editingTarget ? t('target_updated') : t('target_added'),
       });
+    } catch (error) {
+      toast({
+        title: t('common_error'),
+        description: error instanceof Error ? error.message : t('common_error'),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDelete = async (targetId: string) => {
+    if (confirm(t('target_delete_confirm'))) {
+      try {
+        await deleteSavingsTarget(targetId);
+        toast({
+          title: t('common_success'),
+          description: t('target_deleted'),
+        });
+      } catch (error) {
+        toast({
+          title: t('common_error'),
+          description: error instanceof Error ? error.message : t('common_error'),
+          variant: 'destructive',
+        });
+      }
     }
   };
 

@@ -14,33 +14,11 @@ import idFallback from '../locales/id.json';
  * (e.g., via LibreTranslate), without rebuilding the frontend image.
  */
 
-export type Language =
-  | 'id'
-  | 'en'
-  | 'es'
-  | 'fr'
-  | 'de'
-  | 'pt'
-  | 'ru'
-  | 'ar'
-  | 'hi'
-  | 'zh'
-  | 'ja'
-  | 'ko';
+export type Language = 'id' | 'en';
 
 export const languages: { code: Language; name: string; nativeName: string; flag: string }[] = [
   { code: 'id', name: 'Indonesian', nativeName: 'Bahasa Indonesia', flag: '🇮🇩' },
   { code: 'en', name: 'English', nativeName: 'English', flag: '🇺🇸' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸' },
-  { code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch', flag: '🇩🇪' },
-  { code: 'pt', name: 'Portuguese', nativeName: 'Português', flag: '🇵🇹' },
-  { code: 'ru', name: 'Russian', nativeName: 'Русский', flag: '🇷🇺' },
-  { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦' },
-  { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳' },
-  { code: 'zh', name: 'Chinese', nativeName: '中文', flag: '🇨🇳' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵' },
-  { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷' },
 ];
 
 type Dictionary = Record<string, string>;
@@ -103,7 +81,7 @@ async function loadLocale(lang: Language, opts?: { force?: boolean }): Promise<b
   }
 }
 
-export const isRtl = (lang: Language) => lang === 'ar';
+export const isRtl = (_lang: Language) => false;
 
 interface LanguageState {
   language: Language;

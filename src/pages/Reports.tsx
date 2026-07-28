@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { AppLayout } from '@/components/AppLayout';
-import { generateFinanceReport } from '@/lib/pdfGenerator';
-import { generateExcelReport } from '@/lib/excelExport';
 import { getMonthName, generateMonthOptions } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -56,6 +54,7 @@ export default function ReportsPage() {
       // Small delay for UX
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      const { generateFinanceReport } = await import('@/lib/pdfGenerator');
       generateFinanceReport({
         incomes: includeOptions.income ? incomes : [],
         expenses: includeOptions.expense ? expenses : [],
@@ -90,7 +89,8 @@ export default function ReportsPage() {
       // Small delay for UX
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      generateExcelReport({
+      const { generateExcelReport } = await import('@/lib/excelExport');
+      await generateExcelReport({
         incomes: includeOptions.income ? incomes : [],
         expenses: includeOptions.expense ? expenses : [],
         budgets: includeOptions.budget ? budgets : [],

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { usersApi } from '@/lib/api';
 import { AppLayout } from '@/components/AppLayout';
@@ -41,7 +41,7 @@ export default function UserManagementPage() {
   const { toast } = useToast();
 
   // Fetch all users
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const response = await usersApi.getAll();
@@ -63,7 +63,7 @@ export default function UserManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   // Update user role
   const handleUpdateRole = async () => {
@@ -284,8 +284,8 @@ export default function UserManagementPage() {
 
   // Initialize
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    void fetchUsers();
+  }, [fetchUsers]);
 
   // Check if current user is admin
   const isAdmin = user?.role === 'admin';

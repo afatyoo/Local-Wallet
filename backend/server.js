@@ -7,6 +7,12 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import {
+  normalizeMysqlDatetime,
+  pickColumns,
+  sanitizePayload,
+  VALIDATORS,
+} from './validation.js';
 
 dotenv.config();
 
@@ -20,6 +26,9 @@ if (!JWT_SECRET) {
 }
 
 const app = express();
+
+// Requests normally arrive through the Nginx container.
+app.set('trust proxy', 1);
 
 // -------------------------
 // Security: Helmet (secure HTTP headers)
@@ -167,6 +176,20 @@ async function initDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS savings_targets (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        nama_target VARCHAR(100) NOT NULL,
+        target_amount DECIMAL(15,2) NOT NULL,
+        start_date VARCHAR(10) NOT NULL,
+        target_date VARCHAR(10) NOT NULL,
+        linked_account VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS master_data (
         id VARCHAR(36) PRIMARY KEY,
         user_id VARCHAR(36) NOT NULL,
@@ -232,49 +255,6 @@ async function initDatabase() {
 }
 
 // -------------------------
-// Helpers
-// -------------------------
-function normalizeMysqlDatetime(value) {
-  if (!value) return value;
-  if (typeof value === 'string' && value.includes('T')) {
-    const d = new Date(value);
-    if (!Number.isNaN(d.getTime())) {
-      return d.toISOString().slice(0, 19).replace('T', ' ');
-    }
-  }
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+/.test(value)) {
-    return value.slice(0, 19);
-  }
-  return value;
-}
-
-function pickColumns(body, allowedCols) {
-  const out = {};
-  for (const col of allowedCols) {
-    if (Object.prototype.hasOwnProperty.call(body, col)) {
-      out[col] = body[col];
-    }
-  }
-  return out;
-}
-
-/** Strip HTML tags from a string to prevent XSS in stored data */
-function stripHtml(str) {
-  if (typeof str !== 'string') return str;
-  return str.replace(/<[^>]*>/g, '');
-}
-
-/** Validate date format YYYY-MM-DD */
-function isValidDate(str) {
-  return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str);
-}
-
-/** Validate month format YYYY-MM */
-function isValidMonth(str) {
-  return typeof str === 'string' && /^\d{4}-\d{2}$/.test(str);
-}
-
-// -------------------------
 // Auth Middleware
 // -------------------------
 function authenticateToken(req, res, next) {
@@ -299,72 +279,6 @@ function authorizeAdmin(req, res, next) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
-}
-
-// -------------------------
-// Input Validation for each entity
-// -------------------------
-const VALIDATORS = {
-  incomes: (body) => {
-    if (!body.tanggal || !isValidDate(body.tanggal)) return 'tanggal harus format YYYY-MM-DD';
-    if (!body.sumber || typeof body.sumber !== 'string' || !body.sumber.trim()) return 'sumber wajib diisi';
-    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
-    if (!body.metode || typeof body.metode !== 'string' || !body.metode.trim()) return 'metode wajib diisi';
-    if (body.jumlah === undefined || body.jumlah === null || Number(body.jumlah) < 0) return 'jumlah harus >= 0';
-    return null;
-  },
-  expenses: (body) => {
-    if (!body.tanggal || !isValidDate(body.tanggal)) return 'tanggal harus format YYYY-MM-DD';
-    if (!body.nama || typeof body.nama !== 'string' || !body.nama.trim()) return 'nama wajib diisi';
-    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
-    if (!body.metode || typeof body.metode !== 'string' || !body.metode.trim()) return 'metode wajib diisi';
-    if (body.jumlah === undefined || body.jumlah === null || Number(body.jumlah) < 0) return 'jumlah harus >= 0';
-    return null;
-  },
-  budgets: (body) => {
-    if (!body.bulan || !isValidMonth(body.bulan)) return 'bulan harus format YYYY-MM';
-    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
-    if (body.anggaran === undefined || body.anggaran === null || Number(body.anggaran) < 0) return 'anggaran harus >= 0';
-    return null;
-  },
-  savings: (body) => {
-    if (!body.tanggal || !isValidDate(body.tanggal)) return 'tanggal harus format YYYY-MM-DD';
-    if (!body.jenis || !['Tabungan', 'Investasi'].includes(body.jenis)) return 'jenis harus Tabungan atau Investasi';
-    if (!body.nama_akun || typeof body.nama_akun !== 'string' || !body.nama_akun.trim()) return 'nama_akun wajib diisi';
-    return null;
-  },
-  master_data: (body) => {
-    if (!body.type || !['kategoriPemasukan', 'kategoriPengeluaran', 'metodePembayaran'].includes(body.type)) return 'type tidak valid';
-    if (!body.value || typeof body.value !== 'string' || !body.value.trim()) return 'value wajib diisi';
-    return null;
-  },
-  bills: (body) => {
-    if (!body.nama || typeof body.nama !== 'string' || !body.nama.trim()) return 'nama wajib diisi';
-    if (!body.kategori || typeof body.kategori !== 'string' || !body.kategori.trim()) return 'kategori wajib diisi';
-    if (body.jumlah === undefined || body.jumlah === null || Number(body.jumlah) < 0) return 'jumlah harus >= 0';
-    if (body.tanggal_jatuh_tempo === undefined || Number(body.tanggal_jatuh_tempo) < 1 || Number(body.tanggal_jatuh_tempo) > 31) return 'tanggal_jatuh_tempo harus 1-31';
-    if (!body.mulai_dari || !isValidMonth(body.mulai_dari)) return 'mulai_dari harus format YYYY-MM';
-    return null;
-  },
-  bill_payments: (body) => {
-    if (!body.bill_id || typeof body.bill_id !== 'string') return 'bill_id wajib diisi';
-    if (!body.bulan || !isValidMonth(body.bulan)) return 'bulan harus format YYYY-MM';
-    if (body.jumlah_dibayar === undefined || body.jumlah_dibayar === null || Number(body.jumlah_dibayar) < 0) return 'jumlah_dibayar harus >= 0';
-    return null;
-  },
-};
-
-// Text fields that should be sanitized (strip HTML)
-const TEXT_FIELDS = ['catatan', 'nama', 'sumber', 'nama_akun', 'value', 'kategori'];
-
-function sanitizePayload(payload) {
-  const sanitized = { ...payload };
-  for (const field of TEXT_FIELDS) {
-    if (sanitized[field] !== undefined) {
-      sanitized[field] = stripHtml(sanitized[field]);
-    }
-  }
-  return sanitized;
 }
 
 // -------------------------
@@ -484,25 +398,39 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 // -------------------------
 // Authenticated CRUD routes (with ownership verification)
 // -------------------------
+async function validateOwnedReferences(tableName, payload, userId) {
+  const references = [];
+  if (payload.saving_id) {
+    references.push(['savings', payload.saving_id, 'saving_id']);
+  }
+  if (payload.bill_payment_id) {
+    references.push(['bill_payments', payload.bill_payment_id, 'bill_payment_id']);
+  }
+  if (tableName === 'bill_payments' && payload.bill_id) {
+    references.push(['bills', payload.bill_id, 'bill_id']);
+  }
+
+  for (const [table, id, field] of references) {
+    const [rows] = await pool.query(
+      `SELECT id FROM ${table} WHERE id = ? AND user_id = ?`,
+      [id, userId]
+    );
+    if (rows.length === 0) return `${field} tidak valid`;
+  }
+  return null;
+}
+
 function createCrudRoutes(tableName, columns) {
   // All CRUD routes require authentication
   const router = express.Router();
   router.use(authenticateToken);
 
-  // Get all for user — uses token user ID, ignores URL param for security
-  router.get(`/${tableName}/:userId`, async (req, res) => {
+  // The authenticated token is the only source of user ownership.
+  router.get(`/${tableName}`, async (req, res) => {
     try {
-      const tokenUserId = req.user.id;
-      const requestedUserId = req.params.userId;
-
-      // Ownership check: user can only access their own data
-      if (tokenUserId !== requestedUserId) {
-        return res.status(403).json({ error: 'Access denied: you can only access your own data' });
-      }
-
       const [rows] = await pool.query(
         `SELECT * FROM ${tableName} WHERE user_id = ?`,
-        [tokenUserId]
+        [req.user.id]
       );
       res.json(rows);
     } catch (error) {
@@ -520,7 +448,9 @@ function createCrudRoutes(tableName, columns) {
       // Force user_id from authenticated user (ignore body.user_id)
       payload.user_id = req.user.id;
 
-      // Validate input
+      // Sanitize before validation so markup-only values cannot pass required checks.
+      payload = sanitizePayload(payload);
+
       const validator = VALIDATORS[tableName];
       if (validator) {
         const validationError = validator(payload);
@@ -529,8 +459,10 @@ function createCrudRoutes(tableName, columns) {
         }
       }
 
-      // Sanitize text fields
-      payload = sanitizePayload(payload);
+      const referenceError = await validateOwnedReferences(tableName, payload, req.user.id);
+      if (referenceError) {
+        return res.status(400).json({ error: referenceError });
+      }
 
       // Special normalize for bill_payments
       if (payload.dibayar_pada) {
@@ -548,7 +480,11 @@ function createCrudRoutes(tableName, columns) {
         vals
       );
 
-      res.json(data);
+      const [createdRows] = await pool.query(
+        `SELECT * FROM ${tableName} WHERE id = ? AND user_id = ?`,
+        [id, req.user.id]
+      );
+      res.status(201).json(createdRows[0]);
     } catch (error) {
       console.error(`POST /${tableName} error:`, error);
       res.status(500).json({ error: 'Internal server error' });
@@ -560,16 +496,12 @@ function createCrudRoutes(tableName, columns) {
     try {
       const id = req.params.id;
 
-      // Ownership check: verify this row belongs to the authenticated user
       const [existing] = await pool.query(
-        `SELECT user_id FROM ${tableName} WHERE id = ?`,
-        [id]
+        `SELECT * FROM ${tableName} WHERE id = ? AND user_id = ?`,
+        [id, req.user.id]
       );
       if (existing.length === 0) {
         return res.status(404).json({ error: 'Record not found' });
-      }
-      if (existing[0].user_id !== req.user.id) {
-        return res.status(403).json({ error: 'Access denied: you can only modify your own data' });
       }
 
       let payload = pickColumns(req.body || {}, columns);
@@ -579,6 +511,23 @@ function createCrudRoutes(tableName, columns) {
 
       // Sanitize text fields
       payload = sanitizePayload(payload);
+
+      const validator = VALIDATORS[tableName];
+      if (validator) {
+        const validationError = validator({ ...existing[0], ...payload, user_id: req.user.id });
+        if (validationError) {
+          return res.status(400).json({ error: validationError });
+        }
+      }
+
+      const referenceError = await validateOwnedReferences(
+        tableName,
+        { ...existing[0], ...payload },
+        req.user.id
+      );
+      if (referenceError) {
+        return res.status(400).json({ error: referenceError });
+      }
 
       if (payload.dibayar_pada) {
         payload.dibayar_pada = normalizeMysqlDatetime(payload.dibayar_pada);
@@ -590,14 +539,18 @@ function createCrudRoutes(tableName, columns) {
       }
 
       const updates = keys.map((k) => `${k} = ?`).join(', ');
-      const values = [...keys.map((k) => payload[k]), id];
+      const values = [...keys.map((k) => payload[k]), id, req.user.id];
 
       await pool.query(
-        `UPDATE ${tableName} SET ${updates} WHERE id = ?`,
+        `UPDATE ${tableName} SET ${updates} WHERE id = ? AND user_id = ?`,
         values
       );
 
-      res.json({ id, ...payload });
+      const [updatedRows] = await pool.query(
+        `SELECT * FROM ${tableName} WHERE id = ? AND user_id = ?`,
+        [id, req.user.id]
+      );
+      res.json(updatedRows[0]);
     } catch (error) {
       console.error(`PUT /${tableName} error:`, error);
       res.status(500).json({ error: 'Internal server error' });
@@ -609,19 +562,18 @@ function createCrudRoutes(tableName, columns) {
     try {
       const id = req.params.id;
 
-      // Ownership check
       const [existing] = await pool.query(
-        `SELECT user_id FROM ${tableName} WHERE id = ?`,
-        [id]
+        `SELECT id FROM ${tableName} WHERE id = ? AND user_id = ?`,
+        [id, req.user.id]
       );
       if (existing.length === 0) {
         return res.status(404).json({ error: 'Record not found' });
       }
-      if (existing[0].user_id !== req.user.id) {
-        return res.status(403).json({ error: 'Access denied: you can only delete your own data' });
-      }
 
-      await pool.query(`DELETE FROM ${tableName} WHERE id = ?`, [id]);
+      await pool.query(
+        `DELETE FROM ${tableName} WHERE id = ? AND user_id = ?`,
+        [id, req.user.id]
+      );
       res.json({ success: true });
     } catch (error) {
       console.error(`DELETE /${tableName} error:`, error);
@@ -642,6 +594,7 @@ createCrudRoutes('incomes', ['user_id', 'tanggal', 'bulan', 'sumber', 'kategori'
 createCrudRoutes('expenses', ['user_id', 'tanggal', 'bulan', 'nama', 'kategori', 'metode', 'jumlah', 'catatan', 'bill_payment_id', 'saving_id']);
 createCrudRoutes('budgets', ['user_id', 'bulan', 'kategori', 'anggaran']);
 createCrudRoutes('savings', ['user_id', 'tanggal', 'jenis', 'nama_akun', 'setoran', 'penarikan', 'catatan']);
+createCrudRoutes('savings_targets', ['user_id', 'nama_target', 'target_amount', 'start_date', 'target_date', 'linked_account']);
 createCrudRoutes('master_data', ['user_id', 'type', 'value']);
 createCrudRoutes('bills', ['user_id', 'nama', 'kategori', 'jumlah', 'tanggal_jatuh_tempo', 'mulai_dari', 'sampai_dengan', 'catatan', 'is_active']);
 createCrudRoutes('bill_payments', ['bill_id', 'user_id', 'bulan', 'dibayar_pada', 'jumlah_dibayar']);
