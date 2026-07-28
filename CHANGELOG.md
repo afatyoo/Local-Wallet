@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.0] — 2026-07-28
+
+### Added
+- **Authenticator TFA**: Users can enable TOTP two-factor authentication from Settings using a QR code or manual setup key.
+- **Recovery codes**: Eight one-time recovery codes are generated on enrollment and stored only as keyed hashes.
+- **Two-step login**: TFA-enabled accounts complete a short-lived verification challenge before receiving an access token.
+- **Admin TFA reset**: Administrators can see TFA status and reset it for users who lose access to their authenticator.
+- **TFA cryptography tests**: Added RFC 6238 verification, encrypted-secret, and recovery-code tests.
+
+### Security
+- **Encrypted TOTP secrets**: Authenticator secrets are protected at rest with AES-256-GCM.
+- **Scoped JWTs**: Setup and login challenges cannot be used as normal API access tokens.
+- **Rate-limited verification**: Password login and second-factor verification share the authentication rate limiter.
+- **Admin-only registration API**: User creation now requires an authenticated administrator and no longer replaces the admin's active session.
+
+---
+
 ## [1.4.0] — 2026-07-28
 
 ### Added

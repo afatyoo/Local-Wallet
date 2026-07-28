@@ -8,6 +8,16 @@ import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import {
+  createOtpAuthUri,
+  decryptTotpSecret,
+  encryptTotpSecret,
+  findRecoveryCodeIndex,
+  generateRecoveryCodes,
+  generateTotpSecret,
+  hashRecoveryCode,
+  verifyTotp,
+} from './twoFactor.js';
+import {
   normalizeMysqlDatetime,
   pickColumns,
   sanitizePayload,
@@ -23,6 +33,10 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start.');
   process.exit(1);
+}
+const TFA_ENCRYPTION_KEY = process.env.TFA_ENCRYPTION_KEY || JWT_SECRET;
+if (!process.env.TFA_ENCRYPTION_KEY) {
+  console.warn('TFA_ENCRYPTION_KEY is not set; falling back to JWT_SECRET.');
 }
 
 const app = express();
@@ -101,6 +115,9 @@ async function initDatabase() {
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         role ENUM('admin','user') NOT NULL DEFAULT 'user',
+        tfa_secret TEXT NULL,
+        tfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        tfa_recovery_codes JSON NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -115,6 +132,23 @@ async function initDatabase() {
         `ALTER TABLE users ADD COLUMN role ENUM('admin','user') NOT NULL DEFAULT 'user' AFTER password_hash`
       );
       console.log('Migration: added role column to users table');
+    }
+
+    const [userColumns] = await connection.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'`
+    );
+    const existingUserColumns = new Set(userColumns.map(column => column.COLUMN_NAME));
+    const tfaMigrations = [
+      ['tfa_secret', 'ALTER TABLE users ADD COLUMN tfa_secret TEXT NULL AFTER role'],
+      ['tfa_enabled', 'ALTER TABLE users ADD COLUMN tfa_enabled BOOLEAN NOT NULL DEFAULT FALSE AFTER tfa_secret'],
+      ['tfa_recovery_codes', 'ALTER TABLE users ADD COLUMN tfa_recovery_codes JSON NULL AFTER tfa_enabled'],
+    ];
+    for (const [column, statement] of tfaMigrations) {
+      if (!existingUserColumns.has(column)) {
+        await connection.query(statement);
+        console.log(`Migration: added ${column} column to users table`);
+      }
     }
 
     await connection.query(`
@@ -269,6 +303,9 @@ function authenticateToken(req, res, next) {
     if (err) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
+    if (user.purpose && user.purpose !== 'access') {
+      return res.status(401).json({ error: 'Invalid token type' });
+    }
     req.user = user;
     next();
   });
@@ -284,7 +321,52 @@ function authorizeAdmin(req, res, next) {
 // -------------------------
 // Auth routes
 // -------------------------
-app.post('/api/auth/register', authLimiter, async (req, res) => {
+function issueAccessToken(user) {
+  return jwt.sign(
+    {
+      purpose: 'access',
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
+function authResponse(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    createdAt: user.created_at || new Date().toISOString(),
+    token: issueAccessToken(user),
+  };
+}
+
+function parseRecoveryHashes(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function verifySecondFactor(user, code) {
+  const secret = decryptTotpSecret(user.tfa_secret, TFA_ENCRYPTION_KEY);
+  if (verifyTotp(secret, code)) {
+    return { valid: true, recoveryIndex: -1 };
+  }
+
+  const hashes = parseRecoveryHashes(user.tfa_recovery_codes);
+  const recoveryIndex = findRecoveryCodeIndex(code, hashes, TFA_ENCRYPTION_KEY);
+  return { valid: recoveryIndex >= 0, recoveryIndex };
+}
+
+app.post('/api/auth/register', authLimiter, authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {
@@ -304,10 +386,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    // Check if this is the first user to assign admin role
-    const [countRows] = await pool.query('SELECT COUNT(*) as count FROM users');
-    const isFirstUser = countRows[0].count === 0;
-    const role = isFirstUser ? 'admin' : 'user';
+    const role = 'user';
 
     const passwordHash = await bcrypt.hash(password, 10);
     const id = uuidv4();
@@ -342,13 +421,13 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       );
     }
 
-    const token = jwt.sign(
-      { id, username: username.trim(), role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.json({ id, username: username.trim(), role, createdAt: new Date().toISOString(), token });
+    res.status(201).json({
+      id,
+      username: username.trim(),
+      role,
+      createdAt: new Date().toISOString(),
+      tfaEnabled: false,
+    });
   } catch (error) {
     if (String(error?.code) === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: 'Username already exists' });
@@ -376,21 +455,189 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    if (user.tfa_enabled) {
+      const challenge = jwt.sign(
+        { purpose: 'tfa-login', id: user.id },
+        JWT_SECRET,
+        { expiresIn: '5m' }
+      );
+      return res.status(202).json({ requiresTwoFactor: true, challenge });
+    }
 
-    res.json({
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      createdAt: user.created_at,
-      token
-    });
+    res.json(authResponse(user));
   } catch (error) {
     console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/tfa/verify-login', authLimiter, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const { challenge, code } = req.body || {};
+    if (typeof challenge !== 'string' || typeof code !== 'string') {
+      return res.status(400).json({ error: 'Challenge and verification code are required' });
+    }
+
+    let payload;
+    try {
+      payload = jwt.verify(challenge, JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'TFA challenge expired or invalid' });
+    }
+    if (payload.purpose !== 'tfa-login' || !payload.id) {
+      return res.status(401).json({ error: 'Invalid TFA challenge' });
+    }
+
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      'SELECT * FROM users WHERE id = ? FOR UPDATE',
+      [payload.id]
+    );
+    const user = rows[0];
+    if (!user?.tfa_enabled || !user.tfa_secret) {
+      await connection.rollback();
+      return res.status(401).json({ error: 'TFA is not enabled for this account' });
+    }
+
+    const verification = verifySecondFactor(user, code);
+    if (!verification.valid) {
+      await connection.rollback();
+      return res.status(401).json({ error: 'Invalid verification or recovery code' });
+    }
+
+    if (verification.recoveryIndex >= 0) {
+      const hashes = parseRecoveryHashes(user.tfa_recovery_codes);
+      hashes.splice(verification.recoveryIndex, 1);
+      await connection.query(
+        'UPDATE users SET tfa_recovery_codes = ? WHERE id = ?',
+        [JSON.stringify(hashes), user.id]
+      );
+    }
+    await connection.commit();
+    res.json(authResponse(user));
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    console.error('TFA login verification error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+app.get('/api/auth/tfa/status', authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT tfa_enabled, tfa_recovery_codes FROM users WHERE id = ?',
+      [req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      enabled: Boolean(rows[0].tfa_enabled),
+      recoveryCodesRemaining: parseRecoveryHashes(rows[0].tfa_recovery_codes).length,
+    });
+  } catch (error) {
+    console.error('TFA status error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/tfa/setup', authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT username, tfa_enabled FROM users WHERE id = ?',
+      [req.user.id]
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.tfa_enabled) return res.status(409).json({ error: 'TFA is already enabled' });
+
+    const secret = generateTotpSecret();
+    const setupToken = jwt.sign(
+      { purpose: 'tfa-setup', id: req.user.id, secret },
+      JWT_SECRET,
+      { expiresIn: '10m' }
+    );
+    res.json({
+      setupToken,
+      secret,
+      otpAuthUri: createOtpAuthUri(user.username, secret),
+    });
+  } catch (error) {
+    console.error('TFA setup error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/tfa/confirm', authenticateToken, async (req, res) => {
+  try {
+    const { setupToken, code } = req.body || {};
+    if (typeof setupToken !== 'string' || typeof code !== 'string') {
+      return res.status(400).json({ error: 'Setup token and verification code are required' });
+    }
+
+    let payload;
+    try {
+      payload = jwt.verify(setupToken, JWT_SECRET);
+    } catch {
+      return res.status(400).json({ error: 'TFA setup expired; start again' });
+    }
+    if (payload.purpose !== 'tfa-setup' || payload.id !== req.user.id || !payload.secret) {
+      return res.status(400).json({ error: 'Invalid TFA setup' });
+    }
+    if (!verifyTotp(payload.secret, code)) {
+      return res.status(400).json({ error: 'Invalid authenticator code' });
+    }
+
+    const recoveryCodes = generateRecoveryCodes();
+    const recoveryHashes = recoveryCodes.map(recoveryCode =>
+      hashRecoveryCode(recoveryCode, TFA_ENCRYPTION_KEY)
+    );
+    const encryptedSecret = encryptTotpSecret(payload.secret, TFA_ENCRYPTION_KEY);
+    const [result] = await pool.query(
+      `UPDATE users
+       SET tfa_secret = ?, tfa_enabled = TRUE, tfa_recovery_codes = ?
+       WHERE id = ? AND tfa_enabled = FALSE`,
+      [encryptedSecret, JSON.stringify(recoveryHashes), req.user.id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ error: 'TFA is already enabled' });
+    }
+
+    res.json({ enabled: true, recoveryCodes });
+  } catch (error) {
+    console.error('TFA confirmation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/tfa/disable', authenticateToken, async (req, res) => {
+  try {
+    const { password, code } = req.body || {};
+    if (typeof password !== 'string' || typeof code !== 'string') {
+      return res.status(400).json({ error: 'Password and verification code are required' });
+    }
+
+    const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.tfa_enabled) return res.status(409).json({ error: 'TFA is not enabled' });
+
+    const passwordValid = await bcrypt.compare(password, user.password_hash);
+    if (!passwordValid) return res.status(400).json({ error: 'Invalid password' });
+    if (!verifySecondFactor(user, code).valid) {
+      return res.status(400).json({ error: 'Invalid verification or recovery code' });
+    }
+
+    await pool.query(
+      `UPDATE users
+       SET tfa_secret = NULL, tfa_enabled = FALSE, tfa_recovery_codes = NULL
+       WHERE id = ?`,
+      [req.user.id]
+    );
+    res.json({ enabled: false });
+  } catch (error) {
+    console.error('TFA disable error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -604,7 +851,7 @@ createCrudRoutes('bill_payments', ['bill_id', 'user_id', 'bulan', 'dibayar_pada'
 // -------------------------
 app.get('/api/users', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT id, username, role, created_at FROM users');
+    const [rows] = await pool.query('SELECT id, username, role, tfa_enabled, created_at FROM users');
     // Convert snake_case to camelCase for frontend consistency
     // Format createdAt as YYYY-MM-DD based on server's local timezone
     const users = rows.map(row => {
@@ -616,6 +863,7 @@ app.get('/api/users', authenticateToken, authorizeAdmin, async (req, res) => {
         id: row.id,
         username: row.username,
         role: row.role,
+        tfaEnabled: Boolean(row.tfa_enabled),
         createdAt: `${year}-${month}-${day}` // format: YYYY-MM-DD (server local date)
       };
     });
@@ -629,7 +877,10 @@ app.get('/api/users', authenticateToken, authorizeAdmin, async (req, res) => {
 app.get('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
-    const [rows] = await pool.query('SELECT id, username, role, created_at FROM users WHERE id = ?', [userId]);
+    const [rows] = await pool.query(
+      'SELECT id, username, role, tfa_enabled, created_at FROM users WHERE id = ?',
+      [userId]
+    );
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -645,6 +896,7 @@ app.get('/api/users/:id', authenticateToken, authorizeAdmin, async (req, res) =>
       id: rows[0].id,
       username: rows[0].username,
       role: rows[0].role,
+      tfaEnabled: Boolean(rows[0].tfa_enabled),
       createdAt: `${year}-${month}-${day}` // format: YYYY-MM-DD (server local date)
     };
     res.json(user);
@@ -730,6 +982,30 @@ app.put('/api/users/:id/password', authenticateToken, authorizeAdmin, async (req
     res.json({ message: 'User password updated successfully' });
   } catch (error) {
     console.error('PUT /users/:id/password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/users/:id/tfa', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({
+        error: 'Use account settings to disable TFA on your own account',
+      });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE users
+       SET tfa_secret = NULL, tfa_enabled = FALSE, tfa_recovery_codes = NULL
+       WHERE id = ?`,
+      [req.params.id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ success: true, message: 'User TFA reset successfully' });
+  } catch (error) {
+    console.error('DELETE /users/:id/tfa error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

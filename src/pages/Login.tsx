@@ -5,20 +5,49 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2, Wallet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const {
+    login,
+    verifyTwoFactor,
+    cancelTwoFactor,
+    tfaChallenge,
+    isLoading,
+    error,
+    clearError,
+  } = useAuthStore();
   const { toast } = useToast();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
+
+    if (tfaChallenge) {
+      if (!verificationCode.trim()) {
+        toast({
+          title: 'Error',
+          description: 'Masukkan kode authenticator atau recovery code',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const verified = await verifyTwoFactor(verificationCode.trim());
+      if (verified) {
+        toast({
+          title: 'Berhasil',
+          description: 'Verifikasi dua faktor berhasil',
+        });
+        navigate('/dashboard');
+      }
+      return;
+    }
 
     if (!username.trim() || !password.trim()) {
       toast({
@@ -29,8 +58,8 @@ export default function Login() {
       return;
     }
 
-    const success = await login(username.trim(), password);
-    if (success) {
+    const result = await login(username.trim(), password);
+    if (result === 'authenticated') {
       toast({
         title: 'Berhasil',
         description: 'Selamat datang kembali!',
@@ -46,12 +75,20 @@ export default function Login() {
       <Card className="w-full max-w-md relative glass-card animate-scale-in">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center animate-pulse-glow">
-            <Wallet className="w-8 h-8 text-primary" />
+            {tfaChallenge ? (
+              <KeyRound className="w-8 h-8 text-primary" />
+            ) : (
+              <Wallet className="w-8 h-8 text-primary" />
+            )}
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Selamat Datang</CardTitle>
+            <CardTitle className="text-2xl font-bold">
+              {tfaChallenge ? 'Verifikasi Dua Faktor' : 'Selamat Datang'}
+            </CardTitle>
             <CardDescription className="mt-2">
-              Masuk ke akun FinanceApp Anda
+              {tfaChallenge
+                ? 'Masukkan kode dari aplikasi authenticator atau recovery code'
+                : 'Masuk ke akun FinanceApp Anda'}
             </CardDescription>
           </div>
         </CardHeader>
@@ -64,40 +101,60 @@ export default function Login() {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                type="text"
-                placeholder="Masukkan username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="input-finance"
-                autoComplete="username"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
+            {tfaChallenge ? (
+              <div className="space-y-2">
+                <Label htmlFor="verification-code">Kode verifikasi</Label>
                 <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Masukkan password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input-finance pr-10"
-                  autoComplete="current-password"
+                  id="verification-code"
+                  type="text"
+                  placeholder="123456 atau XXXXX-XXXXX"
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.toUpperCase())}
+                  className="input-finance text-center font-mono text-lg tracking-widest"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  maxLength={11}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder="Masukkan username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="input-finance"
+                    autoComplete="username"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Masukkan password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="input-finance pr-10"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
 
           <CardFooter className="flex flex-col gap-4">
@@ -112,13 +169,27 @@ export default function Login() {
                   Memproses...
                 </>
               ) : (
-                'Masuk'
+                tfaChallenge ? 'Verifikasi' : 'Masuk'
               )}
             </Button>
 
-            <p className="text-sm text-muted-foreground text-center">
-              Don't have an account? Contact your administrator to create one.
-            </p>
+            {tfaChallenge ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  cancelTwoFactor();
+                  setVerificationCode('');
+                }}
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Kembali ke login
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center">
+                Don't have an account? Contact your administrator to create one.
+              </p>
+            )}
           </CardFooter>
         </form>
       </Card>

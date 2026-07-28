@@ -6,6 +6,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useBackup } from '@/hooks/useBackup';
 import { useTranslation, languages } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
+import { TwoFactorSettings } from '@/components/TwoFactorSettings';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -167,6 +168,8 @@ export default function SettingsPage() {
             {t('settings_subtitle')}
           </p>
         </div>
+
+        <TwoFactorSettings />
 
         {/* Language Selector */}
         <Card className="glass-card">
