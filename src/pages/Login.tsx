@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2, Wallet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/lib/i18n';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function Login() {
     clearError,
   } = useAuthStore();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +35,7 @@ export default function Login() {
       if (!verificationCode.trim()) {
         toast({
           title: 'Error',
-          description: 'Masukkan kode authenticator atau recovery code',
+          description: t('auth_tfa_required'),
           variant: 'destructive',
         });
         return;
@@ -41,8 +43,8 @@ export default function Login() {
       const verified = await verifyTwoFactor(verificationCode.trim());
       if (verified) {
         toast({
-          title: 'Berhasil',
-          description: 'Verifikasi dua faktor berhasil',
+          title: t('common_success'),
+          description: t('auth_tfa_success'),
         });
         navigate('/dashboard');
       }
@@ -51,8 +53,8 @@ export default function Login() {
 
     if (!username.trim() || !password.trim()) {
       toast({
-        title: 'Error',
-        description: 'Username dan password harus diisi',
+        title: t('common_error'),
+        description: t('auth_fields_required'),
         variant: 'destructive',
       });
       return;
@@ -61,8 +63,8 @@ export default function Login() {
     const result = await login(username.trim(), password);
     if (result === 'authenticated') {
       toast({
-        title: 'Berhasil',
-        description: 'Selamat datang kembali!',
+        title: t('common_success'),
+        description: t('auth_welcome_back'),
       });
       navigate('/dashboard');
     }
@@ -83,12 +85,12 @@ export default function Login() {
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">
-              {tfaChallenge ? 'Verifikasi Dua Faktor' : 'Selamat Datang'}
+              {tfaChallenge ? t('auth_tfa_title') : t('auth_welcome')}
             </CardTitle>
             <CardDescription className="mt-2">
               {tfaChallenge
-                ? 'Masukkan kode dari aplikasi authenticator atau recovery code'
-                : 'Masuk ke akun FinanceApp Anda'}
+                ? t('auth_tfa_description')
+                : t('auth_login_description')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -103,11 +105,11 @@ export default function Login() {
 
             {tfaChallenge ? (
               <div className="space-y-2">
-                <Label htmlFor="verification-code">Kode verifikasi</Label>
+                <Label htmlFor="verification-code">{t('auth_verification_code')}</Label>
                 <Input
                   id="verification-code"
                   type="text"
-                  placeholder="123456 atau XXXXX-XXXXX"
+                  placeholder={t('auth_verification_placeholder')}
                   value={verificationCode}
                   onChange={(event) => setVerificationCode(event.target.value.toUpperCase())}
                   className="input-finance text-center font-mono text-lg tracking-widest"
@@ -119,11 +121,11 @@ export default function Login() {
             ) : (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="username">{t('auth_username')}</Label>
                   <Input
                     id="username"
                     type="text"
-                    placeholder="Masukkan username"
+                    placeholder={t('auth_username_placeholder')}
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="input-finance"
@@ -132,12 +134,12 @@ export default function Login() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">{t('auth_password')}</Label>
                   <div className="relative">
                     <Input
                       id="password"
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Masukkan password"
+                      placeholder={t('auth_password_placeholder')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="input-finance pr-10"
@@ -147,7 +149,7 @@ export default function Login() {
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                      aria-label={showPassword ? t('auth_hide_password') : t('auth_show_password')}
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -166,10 +168,10 @@ export default function Login() {
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Memproses...
+                  {t('auth_processing')}
                 </>
               ) : (
-                tfaChallenge ? 'Verifikasi' : 'Masuk'
+                tfaChallenge ? t('auth_verify') : t('auth_login')
               )}
             </Button>
 
@@ -183,11 +185,11 @@ export default function Login() {
                 }}
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Kembali ke login
+                {t('auth_back_to_login')}
               </Button>
             ) : (
               <p className="text-sm text-muted-foreground text-center">
-                Don't have an account? Contact your administrator to create one.
+                {t('auth_contact_admin')}
               </p>
             )}
           </CardFooter>
