@@ -1,6 +1,7 @@
 import {
   Children,
   createContext,
+  forwardRef,
   isValidElement,
   type AnchorHTMLAttributes,
   type ReactElement,
@@ -125,12 +126,16 @@ interface LinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'
   state?: unknown;
 }
 
-export function Link({ to, replace, state, onClick, target, ...props }: LinkProps) {
+export const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
+  { to, replace, state, onClick, target, ...props },
+  ref,
+) {
   const navigate = useNavigate();
   const href = safeUrl(to);
 
   return (
     <a
+      ref={ref}
       {...props}
       href={href}
       target={target}
@@ -151,7 +156,7 @@ export function Link({ to, replace, state, onClick, target, ...props }: LinkProp
       }}
     />
   );
-}
+});
 
 interface NavLinkState {
   isActive: boolean;
@@ -162,17 +167,21 @@ interface NavLinkProps extends Omit<LinkProps, 'className'> {
   className?: string | ((state: NavLinkState) => string);
 }
 
-export function NavLink({ className, to, ...props }: NavLinkProps) {
+export const NavLink = forwardRef<HTMLAnchorElement, NavLinkProps>(function NavLink(
+  { className, to, ...props },
+  ref,
+) {
   const { pathname } = useLocation();
   const state = { isActive: pathname === safeUrl(to).split(/[?#]/)[0], isPending: false };
 
   return (
     <Link
+      ref={ref}
       {...props}
       to={to}
       className={typeof className === 'function' ? className(state) : className}
     />
   );
-}
+});
 
 export type { NavLinkProps };

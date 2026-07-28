@@ -5,12 +5,14 @@ import { useCurrencyStore, SUPPORTED_CURRENCIES, type CurrencyCode } from '@/sto
 import { useTheme } from '@/hooks/useTheme';
 import { useBackup } from '@/hooks/useBackup';
 import { useTranslation, languages } from '@/lib/i18n';
+import { decryptBackup, encryptBackup } from '@/lib/backupCrypto';
 import { AppLayout } from '@/components/AppLayout';
 import { TwoFactorSettings } from '@/components/TwoFactorSettings';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { 
   Settings as SettingsIcon, 
   Download, 
@@ -28,6 +30,7 @@ import {
   RefreshCw,
   Coins,
   Clock,
+  LockKeyhole,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -56,6 +59,9 @@ export default function SettingsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [encryptExport, setEncryptExport] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
+  const [importPassword, setImportPassword] = useState('');
 
   const localBackupInfo = getLocalBackupInfo();
 
@@ -65,7 +71,10 @@ export default function SettingsPage() {
     setIsExporting(true);
     try {
       const jsonData = await exportData(user.id);
-      const blob = new Blob([jsonData], { type: 'application/json' });
+      const output = encryptExport
+        ? await encryptBackup(jsonData, exportPassword)
+        : jsonData;
+      const blob = new Blob([output], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -128,7 +137,8 @@ export default function SettingsPage() {
     setIsImporting(true);
     try {
       const text = await file.text();
-      const success = await importData(user.id, text);
+      const decrypted = await decryptBackup(text, importPassword);
+      const success = await importData(user.id, decrypted);
       
       if (success) {
         await loadAllData(user.id);
@@ -331,10 +341,32 @@ export default function SettingsPage() {
                 {t('settings_export_desc')}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <Label htmlFor="encrypt-backup">{t('settings_backup_encrypt')}</Label>
+                <Switch
+                  id="encrypt-backup"
+                  checked={encryptExport}
+                  onCheckedChange={setEncryptExport}
+                />
+              </div>
+              {encryptExport && (
+                <div className="space-y-2">
+                  <Label htmlFor="export-password">{t('settings_backup_password')}</Label>
+                  <Input
+                    id="export-password"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    value={exportPassword}
+                    onChange={(event) => setExportPassword(event.target.value)}
+                    placeholder={t('settings_backup_password_hint')}
+                  />
+                </div>
+              )}
               <Button 
                 onClick={handleExport} 
-                disabled={isExporting}
+                disabled={isExporting || (encryptExport && exportPassword.length < 8)}
                 className="w-full gap-2"
               >
                 {isExporting ? (
@@ -362,7 +394,7 @@ export default function SettingsPage() {
                 {t('settings_import_desc')}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -370,6 +402,21 @@ export default function SettingsPage() {
                 onChange={handleFileSelect}
                 className="hidden"
               />
+              <div className="space-y-2">
+                <Label htmlFor="import-password">{t('settings_backup_password_optional')}</Label>
+                <div className="relative">
+                  <LockKeyhole className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="import-password"
+                    type="password"
+                    autoComplete="off"
+                    value={importPassword}
+                    onChange={(event) => setImportPassword(event.target.value)}
+                    className="pl-9"
+                    placeholder={t('settings_backup_password_import_hint')}
+                  />
+                </div>
+              </div>
               <Button 
                 onClick={handleImportClick} 
                 disabled={isImporting}
@@ -457,7 +504,7 @@ export default function SettingsPage() {
                   <CheckCircle className="w-4 h-4 text-income" />
                   Session &amp; local backup
                 </div>
-                <p className="font-medium">LocalStorage</p>
+                <p className="font-medium">HttpOnly cookie &amp; per-user LocalStorage</p>
               </div>
             </div>
 

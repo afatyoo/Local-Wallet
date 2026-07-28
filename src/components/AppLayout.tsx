@@ -98,8 +98,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     ...(isAdmin ? [{ path: '/user-management', labelKey: 'nav_user_management' as const, icon: ShieldCheck }] : []),
   ];
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 

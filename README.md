@@ -158,8 +158,9 @@ Frontend runs on: `http://localhost:5173`
 - `MYSQL_PASSWORD`
 - `MYSQL_HOST` (Docker uses `mysql`)
 - `MYSQL_PORT` (default `3306`)
-- `JWT_SECRET` — required signing key for login sessions
+- `JWT_SECRET` — required signing key for short-lived TFA challenges
 - `TFA_ENCRYPTION_KEY` — recommended separate key for encrypting TOTP secrets at rest; keep this value stable after users enable TFA
+- `COOKIE_SECURE` — set to `true` when the public app is served through HTTPS
 
 ---
 
@@ -176,11 +177,14 @@ Frontend runs on: `http://localhost:5173`
 - `GET /api/health`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `GET /api/auth/session`
+- `POST /api/auth/logout`
 - `POST /api/auth/tfa/verify-login`
 - `GET /api/auth/tfa/status`
 - `POST /api/auth/tfa/setup`
 - `POST /api/auth/tfa/confirm`
 - `POST /api/auth/tfa/disable`
+- `PUT /api/backup/restore`
 - CRUD:
   - `/api/incomes/*`
   - `/api/expenses/*`
@@ -197,6 +201,9 @@ Frontend runs on: `http://localhost:5173`
 - Passwords are **hashed** (bcrypt) before being stored.
 - TOTP secrets are encrypted with AES-256-GCM and recovery codes are stored only as keyed hashes.
 - Login TFA challenges expire after five minutes and cannot be used as API access tokens.
+- Login sessions are opaque, revocable, stored in MySQL, and sent through `HttpOnly` cookies.
+- Authenticated write requests use a per-session CSRF token.
+- JSON restore is validated and committed atomically; encrypted backup files use password-derived AES-256-GCM.
 - For production: change DB passwords, and run behind HTTPS (reverse proxy like Nginx/Caddy/Traefik).
 - CORS is restricted through `ALLOWED_ORIGINS`.
 

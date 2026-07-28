@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.0] — 2026-07-28
+
+### Added
+- **Server-side sessions**: Login now creates revocable opaque sessions stored in MySQL.
+- **CSRF protection**: Authenticated mutations require a per-session CSRF token.
+- **Atomic backup restore**: Validated backups are restored in a single MySQL transaction with rollback on failure.
+- **Encrypted backups**: JSON backup files can be protected with password-derived AES-256-GCM encryption.
+- **Versioned migrations**: Database schema changes and finance query indexes are tracked in `schema_migrations`.
+
+### Changed
+- **HttpOnly authentication**: Browser sessions use `HttpOnly`, `SameSite` cookies instead of JWTs in local storage.
+- **Immediate privilege updates**: Role changes are read from MySQL on every request; password, role, and TFA resets revoke active sessions.
+- **Per-user local backups**: Browser backup keys are namespaced by user ID.
+- **Backend modules**: Database, migrations, sessions, CRUD, backup validation, and restore routes are split by responsibility.
+- **Smaller finance store**: Restore orchestration moved from the browser store to the backend transaction endpoint.
+
+### Security
+- **No browser-readable access token**: XSS can no longer extract a long-lived API bearer token from `localStorage`.
+- **Session revocation**: Administrative password, role, and TFA changes invalidate existing sessions immediately.
+- **Relational restore validation**: Invalid or cross-record backup references are rejected before existing data is touched.
+
+---
+
 ## [1.5.0] — 2026-07-28
 
 ### Added
