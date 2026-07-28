@@ -79,9 +79,14 @@ app.use(express.json({ limit: '6mb' }));
 // -------------------------
 // Security: Rate Limiting
 // -------------------------
+function positiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name] || fallback);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // 200 requests per window per IP
+  max: positiveIntegerEnv('GLOBAL_RATE_LIMIT_MAX', 1000),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
@@ -90,7 +95,7 @@ app.use(globalLimiter);
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 login/register attempts per window per IP
+  max: positiveIntegerEnv('AUTH_RATE_LIMIT_MAX', 10),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication attempts, please try again later' },

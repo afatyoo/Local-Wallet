@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { useToast } from '@/hooks/use-toast';
@@ -8,6 +8,12 @@ const backupKey = (userId: string) => `finance_backup_data:${userId}`;
 const backupDateKey = (userId: string) => `finance_backup_date:${userId}`;
 const lastBackupKey = (userId: string) => `finance_last_backup:${userId}`;
 const REMINDER_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+const autoSaveInFlight = new Map<string, Promise<void>>();
+
+function saveBackupToLocalStorage(userId: string, jsonData: string) {
+  localStorage.setItem(backupKey(userId), jsonData);
+  localStorage.setItem(backupDateKey(userId), new Date().toISOString());
+}
 
 export function useBackup() {
   const { user } = useAuthStore();
@@ -31,14 +37,21 @@ export function useBackup() {
   // Auto-save to localStorage (dual storage)
   const autoSaveToLocalStorage = useCallback(async () => {
     if (!user?.id) return;
-    
-    try {
-      const jsonData = await exportData(user.id);
-      localStorage.setItem(backupKey(user.id), jsonData);
-      localStorage.setItem(backupDateKey(user.id), new Date().toISOString());
-    } catch (error) {
-      console.error('Auto-save to localStorage failed:', error);
-    }
+
+    const existing = autoSaveInFlight.get(user.id);
+    if (existing) return existing;
+    const operation = (async () => {
+      try {
+        const jsonData = await exportData(user.id);
+        saveBackupToLocalStorage(user.id, jsonData);
+      } catch (error) {
+        console.error('Auto-save to localStorage failed:', error);
+      } finally {
+        autoSaveInFlight.delete(user.id);
+      }
+    })();
+    autoSaveInFlight.set(user.id, operation);
+    return operation;
   }, [user?.id, exportData]);
 
   // Quick backup to file
@@ -60,8 +73,8 @@ export function useBackup() {
       // Update last backup date
       updateLastBackupDate();
 
-      // Also save to localStorage
-      await autoSaveToLocalStorage();
+      // Reuse the same export instead of issuing another set of API requests.
+      saveBackupToLocalStorage(user.id, jsonData);
 
       toast({
         title: t('common_success'),
@@ -77,7 +90,7 @@ export function useBackup() {
       });
       return false;
     }
-  }, [user?.id, user?.username, exportData, toast, t, updateLastBackupDate, autoSaveToLocalStorage]);
+  }, [user?.id, user?.username, exportData, toast, t, updateLastBackupDate]);
 
   // Restore from localStorage backup
   const restoreFromLocalStorage = useCallback(async () => {
@@ -136,14 +149,6 @@ export function useBackup() {
       backupDate: backupDate ? new Date(backupDate) : null,
     };
   }, [user?.id]);
-
-  // Auto-save on data changes (debounced effect in components that use this)
-  useEffect(() => {
-    if (user?.id) {
-      // Initial auto-save
-      autoSaveToLocalStorage();
-    }
-  }, [user?.id, autoSaveToLocalStorage]);
 
   return {
     quickBackup,
