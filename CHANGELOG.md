@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.7.1] — 2026-07-29
+
+### Added
+- **Receipt preview**: Preview images and PDFs before saving an expense or from the expense table.
+
+### Fixed
+- **Backup request coalescing**: Simultaneous local autosaves now share one export and quick backup no longer exports twice.
+- **Rate-limit false positives**: Removed duplicate hook-level autosaves and raised the configurable global SPA traffic limit to 1,000 requests per 15 minutes.
+- **Attachment form layout**: Large previews scroll within the expense dialog instead of overflowing the viewport.
+
+---
+
 ## [1.7.0] — 2026-07-28
 
 ### Added
@@ -15,7 +27,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Notifications**: In-app alerts for upcoming bills and debts plus budget threshold warnings.
 - **SMTP delivery**: Optional automatic email alerts with configurable scan interval and a test-email action.
 - **Expense receipts**: Attach and download JPG, PNG, WebP, or PDF evidence up to 5 MB.
-- **Receipt preview**: Preview images and PDFs before saving an expense or from the expense table.
 - **Activity and trash**: Finance changes are recorded and deleted records remain restorable for 30 days.
 
 ### Changed
