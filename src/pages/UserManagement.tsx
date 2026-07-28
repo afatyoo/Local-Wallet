@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronDown, Trash2, UserPlus, ShieldCheck, Eye, EyeOff, Key } from 'lucide-react';
+import { ChevronDown, Trash2, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff, Key } from 'lucide-react';
 
 export default function UserManagementPage() {
   const { user } = useAuthStore();
@@ -16,6 +16,7 @@ export default function UserManagementPage() {
     id: string;
     username: string;
     role: 'admin' | 'user';
+    tfaEnabled: boolean;
     createdAt: string;
   }>>([]);
   const [loading, setLoading] = useState(false);
@@ -129,6 +130,26 @@ export default function UserManagementPage() {
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleResetTfa = async (userId: string, username: string) => {
+    if (!confirm(`Reset TFA for ${username}? The user can sign in with password only afterward.`)) {
+      return;
+    }
+
+    const response = await usersApi.resetTfa(userId);
+    if (response.data?.success) {
+      setUsers(previous =>
+        previous.map(item => item.id === userId ? { ...item, tfaEnabled: false } : item)
+      );
+      toast({ title: 'Success', description: response.data.message });
+    } else {
+      toast({
+        title: 'Error',
+        description: response.error || 'Failed to reset TFA',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -333,6 +354,7 @@ export default function UserManagementPage() {
                 <TableRow>
                   <TableHead className="text-left w-20">Username</TableHead>
                   <TableHead className="text-left w-16">Role</TableHead>
+                  <TableHead className="text-left w-16">TFA</TableHead>
                   <TableHead className="text-left w-28">Created At</TableHead>
                   <TableHead className="text-center w-20">Actions</TableHead>
                 </TableRow>
@@ -358,6 +380,11 @@ export default function UserManagementPage() {
                           <SelectItem value="user">User</SelectItem>
                         </SelectContent>
                       </Select>
+                    </TableCell>
+                    <TableCell>
+                      <span className={userItem.tfaEnabled ? 'text-primary' : 'text-muted-foreground'}>
+                        {userItem.tfaEnabled ? 'Enabled' : 'Disabled'}
+                      </span>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {(() => {
@@ -388,6 +415,17 @@ export default function UserManagementPage() {
                             className="mr-2"
                           >
                             <Key className="w-3 h-3 mr-1" /> Change Password
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleResetTfa(userItem.id, userItem.username)}
+                            disabled={loading || !userItem.tfaEnabled || userItem.id === user?.id}
+                            className="mr-2 h-9 w-9"
+                            title="Reset TFA"
+                            aria-label={`Reset TFA for ${userItem.username}`}
+                          >
+                            <ShieldOff className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="destructive"

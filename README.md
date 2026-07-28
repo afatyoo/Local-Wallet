@@ -10,6 +10,7 @@ Great for tracking **income, expenses, budgets, savings/investments, and recurri
 ## ✨ Features
 
 - 🔐 **Register & Login** (passwords hashed with bcrypt) — registration is admin-only (see User Management)
+- 🔑 **Two-Factor Authentication** — optional TOTP, authenticator QR setup, one-time recovery codes, and admin reset
 - 📊 **Dashboard**: income vs expense, balance summary, recent transactions
 - 💵 **Income**: CRUD + categories + payment methods
 - 💸 **Expenses**: CRUD + categories + payment methods
@@ -21,7 +22,7 @@ Great for tracking **income, expenses, budgets, savings/investments, and recurri
 - ♻️ **Export/Import JSON** for backup/restore
 
 ### 👤 User Management (Admin)
-- Admins can view all users, update roles, reset passwords, and create new users via inline modal
+- Admins can view all users, update roles, reset passwords/TFA, and create new users via inline modal
 - Self-registration is disabled; only administrators can create accounts
 - Dates (e.g., Created At) are displayed in the server's local timezone for consistency
 
@@ -44,7 +45,7 @@ Great for tracking **income, expenses, budgets, savings/investments, and recurri
 
 ## 🧱 Tech Stack
 
-- Frontend: React 18, TypeScript, Vite, Tailwind, shadcn/ui, Zustand, React Router
+- Frontend: React 18, TypeScript, Vite, Tailwind, shadcn/ui, Zustand
 - Charts: Recharts
 - PDF Export: jsPDF + jspdf-autotable
 - Currency: Zustand store + persisted settings + exchange rates (public currency rates API)
@@ -85,6 +86,8 @@ MYSQL_ROOT_PASSWORD=change_me_root
 MYSQL_DATABASE=finance_db
 MYSQL_USER=finance_user
 MYSQL_PASSWORD=change_me_password
+JWT_SECRET=generate_a_long_random_value
+TFA_ENCRYPTION_KEY=generate_a_different_long_random_value
 ```
 
 3) Run:
@@ -155,6 +158,8 @@ Frontend runs on: `http://localhost:5173`
 - `MYSQL_PASSWORD`
 - `MYSQL_HOST` (Docker uses `mysql`)
 - `MYSQL_PORT` (default `3306`)
+- `JWT_SECRET` — required signing key for login sessions
+- `TFA_ENCRYPTION_KEY` — recommended separate key for encrypting TOTP secrets at rest; keep this value stable after users enable TFA
 
 ---
 
@@ -171,6 +176,11 @@ Frontend runs on: `http://localhost:5173`
 - `GET /api/health`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/tfa/verify-login`
+- `GET /api/auth/tfa/status`
+- `POST /api/auth/tfa/setup`
+- `POST /api/auth/tfa/confirm`
+- `POST /api/auth/tfa/disable`
 - CRUD:
   - `/api/incomes/*`
   - `/api/expenses/*`
@@ -185,8 +195,10 @@ Frontend runs on: `http://localhost:5173`
 ## 🔐 Notes / Security
 
 - Passwords are **hashed** (bcrypt) before being stored.
+- TOTP secrets are encrypted with AES-256-GCM and recovery codes are stored only as keyed hashes.
+- Login TFA challenges expire after five minutes and cannot be used as API access tokens.
 - For production: change DB passwords, and run behind HTTPS (reverse proxy like Nginx/Caddy/Traefik).
-- Default CORS is enabled (backend uses `cors()`).
+- CORS is restricted through `ALLOWED_ORIGINS`.
 
 ---
 

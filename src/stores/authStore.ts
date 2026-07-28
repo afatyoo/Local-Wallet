@@ -16,8 +16,11 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  tfaChallenge: string | null;
   
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<'authenticated' | 'tfa-required' | 'error'>;
+  verifyTwoFactor: (code: string) => Promise<boolean>;
+  cancelTwoFactor: () => void;
   register: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   clearError: () => void;
@@ -31,6 +34,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      tfaChallenge: null,
 
       login: async (username: string, password: string) => {
         set({ isLoading: true, error: null });
@@ -43,10 +47,20 @@ export const useAuthStore = create<AuthState>()(
               error: error === 'Invalid credentials' ? 'Username atau password salah' : error,
               isLoading: false
             });
-            return false;
+            return 'error';
           }
 
           if (data) {
+            if ('requiresTwoFactor' in data) {
+              set({
+                user: null,
+                isAuthenticated: false,
+                tfaChallenge: data.challenge,
+                isLoading: false,
+                error: null,
+              });
+              return 'tfa-required';
+            }
             const user: User = {
               id: data.id,
               username: data.username,
@@ -54,16 +68,57 @@ export const useAuthStore = create<AuthState>()(
               createdAt: data.createdAt,
               token: data.token,
             };
-            set({ user, isAuthenticated: true, isLoading: false, error: null });
-            return true;
+            set({
+              user,
+              isAuthenticated: true,
+              tfaChallenge: null,
+              isLoading: false,
+              error: null,
+            });
+            return 'authenticated';
           }
 
           set({ error: 'Terjadi kesalahan saat login', isLoading: false });
-          return false;
+          return 'error';
         } catch (error) {
           set({ error: 'Terjadi kesalahan saat login', isLoading: false });
+          return 'error';
+        }
+      },
+
+      verifyTwoFactor: async (code: string) => {
+        const { tfaChallenge } = get();
+        if (!tfaChallenge) {
+          set({ error: 'Sesi verifikasi sudah berakhir' });
           return false;
         }
+
+        set({ isLoading: true, error: null });
+        const { data, error } = await authApi.verifyTwoFactor(tfaChallenge, code);
+        if (!data || error) {
+          set({ error: error || 'Kode verifikasi tidak valid', isLoading: false });
+          return false;
+        }
+
+        const user: User = {
+          id: data.id,
+          username: data.username,
+          role: data.role,
+          createdAt: data.createdAt,
+          token: data.token,
+        };
+        set({
+          user,
+          isAuthenticated: true,
+          tfaChallenge: null,
+          isLoading: false,
+          error: null,
+        });
+        return true;
+      },
+
+      cancelTwoFactor: () => {
+        set({ tfaChallenge: null, error: null, isLoading: false });
       },
 
       register: async (username: string, password: string) => {
@@ -81,14 +136,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           if (data) {
-            const user: User = {
-              id: data.id,
-              username: data.username,
-              role: data.role,
-              createdAt: data.createdAt,
-              token: data.token,
-            };
-            set({ user, isAuthenticated: true, isLoading: false, error: null });
+            set({ isLoading: false, error: null });
             return true;
           }
 
@@ -101,7 +149,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        set({ user: null, isAuthenticated: false, error: null });
+        set({ user: null, isAuthenticated: false, tfaChallenge: null, error: null });
       },
 
       clearError: () => {

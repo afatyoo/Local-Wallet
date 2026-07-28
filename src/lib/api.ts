@@ -55,9 +55,23 @@ interface ApiResponse<T> {
   error?: string;
 }
 
+export interface AuthenticatedUserResponse {
+  id: string;
+  username: string;
+  role: string;
+  createdAt: string;
+  token: string;
+}
+
+export interface TfaChallengeResponse {
+  requiresTwoFactor: true;
+  challenge: string;
+}
+
 async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  behavior: { logoutOnUnauthorized?: boolean } = {},
 ): Promise<ApiResponse<T>> {
   try {
     const token = getAuthToken();
@@ -79,7 +93,7 @@ async function apiRequest<T>(
     });
 
     // Auto-logout on 401 (expired/invalid token)
-    if (response.status === 401) {
+    if (response.status === 401 && behavior.logoutOnUnauthorized !== false) {
       try {
         localStorage.removeItem('finance-auth');
       } catch { /* ignore */ }
@@ -113,15 +127,41 @@ async function apiRequest<T>(
 // Auth API
 export const authApi = {
   login: (username: string, password: string) =>
-    apiRequest<{ id: string; username: string; role: string; createdAt: string; token: string }>('/auth/login', {
+    apiRequest<AuthenticatedUserResponse | TfaChallengeResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
 
   register: (username: string, password: string) =>
-    apiRequest<{ id: string; username: string; role: string; createdAt: string; token: string }>('/auth/register', {
+    apiRequest<ApiUser>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
+    }),
+
+  verifyTwoFactor: (challenge: string, code: string) =>
+    apiRequest<AuthenticatedUserResponse>('/auth/tfa/verify-login', {
+      method: 'POST',
+      body: JSON.stringify({ challenge, code }),
+    }, { logoutOnUnauthorized: false }),
+
+  getTfaStatus: () =>
+    apiRequest<{ enabled: boolean; recoveryCodesRemaining: number }>('/auth/tfa/status'),
+
+  startTfaSetup: () =>
+    apiRequest<{ setupToken: string; secret: string; otpAuthUri: string }>('/auth/tfa/setup', {
+      method: 'POST',
+    }),
+
+  confirmTfaSetup: (setupToken: string, code: string) =>
+    apiRequest<{ enabled: true; recoveryCodes: string[] }>('/auth/tfa/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ setupToken, code }),
+    }),
+
+  disableTfa: (password: string, code: string) =>
+    apiRequest<{ enabled: false }>('/auth/tfa/disable', {
+      method: 'POST',
+      body: JSON.stringify({ password, code }),
     }),
 };
 
@@ -252,6 +292,7 @@ export interface ApiUser {
   id: string;
   username: string;
   role: 'admin' | 'user';
+  tfaEnabled: boolean;
   createdAt: string;
 }
 
@@ -269,6 +310,9 @@ export const usersApi = {
   updatePassword: (id: string, password: string) => apiRequest<{ message: string }>(`/users/${id}/password`, {
     method: 'PUT',
     body: JSON.stringify({ password })
+  }),
+  resetTfa: (id: string) => apiRequest<{ success: boolean; message: string }>(`/users/${id}/tfa`, {
+    method: 'DELETE'
   }),
   delete: (id: string) => apiRequest<{ success: boolean; message: string }>(`/users/${id}`, {
     method: 'DELETE'
