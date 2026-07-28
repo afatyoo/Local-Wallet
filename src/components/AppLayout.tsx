@@ -24,6 +24,7 @@ import {
   CalendarDays,
   Flag,
   ShieldCheck,
+  Landmark,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -93,6 +94,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { path: '/health-score', labelKey: 'nav_health_score' as const, icon: Heart },
     { path: '/targets', labelKey: 'nav_targets' as const, icon: Flag },
     { path: '/reports', labelKey: 'nav_reports' as const, icon: FileText },
+    { path: '/planning', labelKey: 'nav_planning' as const, icon: Landmark },
     { path: '/master-data', labelKey: 'nav_master_data' as const, icon: Database },
     { path: '/settings', labelKey: 'nav_settings' as const, icon: Settings },
     ...(isAdmin ? [{ path: '/user-management', labelKey: 'nav_user_management' as const, icon: ShieldCheck }] : []),

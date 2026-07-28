@@ -1,9 +1,12 @@
 import express from 'express';
+import { unlinkSync } from 'node:fs';
+import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { parseBackup } from '../backupSchema.js';
 import { normalizeMysqlDatetime } from '../validation.js';
 
 const CHUNK_SIZE = 500;
+const RECEIPT_DIR = process.env.RECEIPT_DIR || '/app/uploads';
 
 async function insertRows(connection, table, columns, rows) {
   for (let offset = 0; offset < rows.length; offset += CHUNK_SIZE) {
@@ -32,10 +35,21 @@ export function createBackupRouter({ pool, authenticate }) {
     }
 
     const connection = await pool.getConnection();
+    let removedReceiptFiles = [];
     try {
       await connection.beginTransaction();
       const userId = req.user.id;
 
+      const [receiptRows] = await connection.query(
+        'SELECT stored_name FROM receipts WHERE user_id = ?',
+        [userId],
+      );
+      removedReceiptFiles = receiptRows.map((row) => row.stored_name);
+      await connection.query('DELETE FROM receipts WHERE user_id = ?', [userId]);
+      await connection.query('DELETE FROM debt_payments WHERE user_id = ?', [userId]);
+      await connection.query('DELETE FROM debts WHERE user_id = ?', [userId]);
+      await connection.query('DELETE FROM net_worth_items WHERE user_id = ?', [userId]);
+      await connection.query('DELETE FROM categorization_rules WHERE user_id = ?', [userId]);
       await connection.query('DELETE FROM bill_payments WHERE user_id = ?', [userId]);
       await connection.query('DELETE FROM expenses WHERE user_id = ?', [userId]);
       await connection.query('DELETE FROM incomes WHERE user_id = ?', [userId]);
@@ -48,6 +62,7 @@ export function createBackupRouter({ pool, authenticate }) {
       const savingIds = new Map(backup.savings.map((item) => [item.id, uuidv4()]));
       const billIds = new Map(backup.bills.map((item) => [item.id, uuidv4()]));
       const paymentIds = new Map(backup.billPayments.map((item) => [item.id, uuidv4()]));
+      const debtIds = new Map(backup.debts.map((item) => [item.id, uuidv4()]));
 
       await insertRows(
         connection,
@@ -110,9 +125,9 @@ export function createBackupRouter({ pool, authenticate }) {
       await insertRows(
         connection,
         'budgets',
-        ['id', 'user_id', 'bulan', 'kategori', 'anggaran'],
+        ['id', 'user_id', 'bulan', 'kategori', 'anggaran', 'rollover'],
         backup.budgets.map((item) => [
-          uuidv4(), userId, item.bulan, item.kategori, item.anggaran,
+          uuidv4(), userId, item.bulan, item.kategori, item.anggaran, item.rollover,
         ]),
       );
       await insertRows(
@@ -133,8 +148,49 @@ export function createBackupRouter({ pool, authenticate }) {
         ['id', 'user_id', 'type', 'value'],
         backup.masterData.map((item) => [uuidv4(), userId, item.type, item.value]),
       );
+      await insertRows(
+        connection,
+        'net_worth_items',
+        ['id', 'user_id', 'type', 'name', 'category', 'value', 'as_of_date', 'notes'],
+        backup.netWorthItems.map((item) => [
+          uuidv4(), userId, item.type, item.name, item.category, item.value,
+          item.asOfDate, item.notes,
+        ]),
+      );
+      await insertRows(
+        connection,
+        'debts',
+        [
+          'id', 'user_id', 'direction', 'name', 'principal', 'remaining',
+          'interest_rate', 'due_date', 'status', 'notes',
+        ],
+        backup.debts.map((item) => [
+          debtIds.get(item.id), userId, item.direction, item.name, item.principal,
+          item.remaining, item.interestRate, item.dueDate || null, item.status, item.notes,
+        ]),
+      );
+      await insertRows(
+        connection,
+        'debt_payments',
+        ['id', 'debt_id', 'user_id', 'amount', 'paid_at', 'notes'],
+        backup.debtPayments.map((item) => [
+          uuidv4(), debtIds.get(item.debtId), userId, item.amount, item.paidAt, item.notes,
+        ]),
+      );
+      await insertRows(
+        connection,
+        'categorization_rules',
+        ['id', 'user_id', 'transaction_type', 'pattern', 'category', 'priority', 'active'],
+        backup.categorizationRules.map((item) => [
+          uuidv4(), userId, item.transactionType, item.pattern, item.category,
+          item.priority, item.active,
+        ]),
+      );
 
       await connection.commit();
+      removedReceiptFiles.forEach((storedName) => {
+        try { unlinkSync(path.join(RECEIPT_DIR, storedName)); } catch { /* already absent */ }
+      });
       res.json({
         success: true,
         restoredRecords:
@@ -145,7 +201,11 @@ export function createBackupRouter({ pool, authenticate }) {
           + backup.savingsTargets.length
           + backup.masterData.length
           + backup.bills.length
-          + backup.billPayments.length,
+          + backup.billPayments.length
+          + backup.netWorthItems.length
+          + backup.debts.length
+          + backup.debtPayments.length
+          + backup.categorizationRules.length,
       });
     } catch (error) {
       await connection.rollback().catch(() => {});

@@ -32,9 +32,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Pencil, Trash2, ArrowDownCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, ArrowDownCircle, Download, Paperclip } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Expense } from '@/stores/financeStore';
+import { downloadReceipt, planningApi, uploadExpenseReceipt } from '@/lib/api';
 
 export default function ExpensePage() {
   const { user } = useAuthStore();
@@ -43,6 +44,8 @@ export default function ExpensePage() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Expense | null>(null);
+  const [rules, setRules] = useState<Array<{ pattern: string; category: string; active: boolean | number }>>([]);
+  const [receipts, setReceipts] = useState<Record<string, Array<{ id: string; original_name: string }>>>({});
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
     nama: '',
@@ -57,6 +60,37 @@ export default function ExpensePage() {
       loadAllData(user.id);
     }
   }, [user?.id, loadAllData]);
+
+  useEffect(() => {
+    planningApi.list<{
+      id: string;
+      transaction_type: 'expense' | 'income';
+      pattern: string;
+      category: string;
+      active: boolean | number;
+    }>('rules').then((result) => setRules(
+      (result.data || []).filter(
+        (rule) => rule.transaction_type === 'expense' && Boolean(rule.active),
+      ),
+    ));
+  }, []);
+
+  useEffect(() => {
+    planningApi.listAllReceipts().then((result) => {
+      const grouped: Record<string, Array<{ id: string; original_name: string }>> = {};
+      (result.data || []).forEach((receipt) => {
+        (grouped[receipt.expense_id] ||= []).push(receipt);
+      });
+      setReceipts(grouped);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!formData.nama || formData.kategori) return;
+    const name = formData.nama.toLocaleLowerCase();
+    const match = rules.find((rule) => name.includes(rule.pattern.toLocaleLowerCase()));
+    if (match) setFormData((current) => ({ ...current, kategori: match.category }));
+  }, [formData.nama, formData.kategori, rules]);
 
   // Auto-switch to latest month when on 'all' and data loads
   const hasAutoSwitched = useRef(false);
@@ -178,6 +212,29 @@ export default function ExpensePage() {
       await deleteExpense(id);
       toast({ title: t('common_success'), description: t('common_success') });
     }
+  };
+
+  const handleReceiptUpload = (expenseId: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/webp,application/pdf';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        await uploadExpenseReceipt(expenseId, file);
+        const result = await planningApi.listReceipts(expenseId);
+        setReceipts((current) => ({ ...current, [expenseId]: result.data || [] }));
+        toast({ title: t('common_success') });
+      } catch (error) {
+        toast({
+          title: t('common_error'),
+          description: error instanceof Error ? error.message : t('common_error'),
+          variant: 'destructive',
+        });
+      }
+    };
+    input.click();
   };
 
   return (
@@ -339,6 +396,27 @@ export default function ExpensePage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={t('expense_upload_receipt')}
+                          onClick={() => handleReceiptUpload(expense.id)}
+                        >
+                          <Paperclip className="w-4 h-4" />
+                        </Button>
+                        {receipts[expense.id]?.[0] && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={t('expense_receipt')}
+                            onClick={() => downloadReceipt(
+                              receipts[expense.id][0].id,
+                              receipts[expense.id][0].original_name,
+                            )}
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"

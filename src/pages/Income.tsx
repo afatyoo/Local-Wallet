@@ -35,6 +35,7 @@ import {
 import { Plus, Pencil, Trash2, ArrowUpCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Income } from '@/stores/financeStore';
+import { planningApi } from '@/lib/api';
 
 export default function IncomePage() {
   const { user } = useAuthStore();
@@ -43,6 +44,7 @@ export default function IncomePage() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Income | null>(null);
+  const [rules, setRules] = useState<Array<{ pattern: string; category: string }>>([]);
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
     sumber: '',
@@ -57,6 +59,27 @@ export default function IncomePage() {
       loadAllData(user.id);
     }
   }, [user?.id, loadAllData]);
+
+  useEffect(() => {
+    planningApi.list<{
+      id: string;
+      transaction_type: 'expense' | 'income';
+      pattern: string;
+      category: string;
+      active: boolean | number;
+    }>('rules').then((result) => setRules(
+      (result.data || []).filter(
+        (rule) => rule.transaction_type === 'income' && Boolean(rule.active),
+      ),
+    ));
+  }, []);
+
+  useEffect(() => {
+    if (!formData.sumber || formData.kategori) return;
+    const source = formData.sumber.toLocaleLowerCase();
+    const match = rules.find((rule) => source.includes(rule.pattern.toLocaleLowerCase()));
+    if (match) setFormData((current) => ({ ...current, kategori: match.category }));
+  }, [formData.sumber, formData.kategori, rules]);
 
   // Auto-switch to latest month when on 'all' and data loads
   const hasAutoSwitched = useRef(false);

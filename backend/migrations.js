@@ -201,6 +201,179 @@ const migrations = [
       await addIndex(connection, 'bill_payments', 'uq_payments_bill_month', 'bill_id, bulan', true);
     },
   },
+  {
+    id: '005_planning_and_activity',
+    up: async (connection) => {
+      if (!(await columnExists(connection, 'budgets', 'rollover'))) {
+        await connection.query(
+          'ALTER TABLE budgets ADD COLUMN rollover BOOLEAN NOT NULL DEFAULT FALSE AFTER anggaran',
+        );
+      }
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS net_worth_items (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          type ENUM('asset','liability') NOT NULL,
+          name VARCHAR(100) NOT NULL,
+          category VARCHAR(50) NOT NULL,
+          value DECIMAL(15,2) NOT NULL,
+          as_of_date VARCHAR(10) NOT NULL,
+          notes TEXT,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS debts (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          direction ENUM('owed','receivable') NOT NULL DEFAULT 'owed',
+          name VARCHAR(100) NOT NULL,
+          principal DECIMAL(15,2) NOT NULL,
+          remaining DECIMAL(15,2) NOT NULL,
+          interest_rate DECIMAL(7,3) NOT NULL DEFAULT 0,
+          due_date VARCHAR(10) NULL,
+          status ENUM('active','paid') NOT NULL DEFAULT 'active',
+          notes TEXT,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS debt_payments (
+          id VARCHAR(36) PRIMARY KEY,
+          debt_id VARCHAR(36) NOT NULL,
+          user_id VARCHAR(36) NOT NULL,
+          amount DECIMAL(15,2) NOT NULL,
+          paid_at VARCHAR(10) NOT NULL,
+          notes TEXT,
+          FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS categorization_rules (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          transaction_type ENUM('expense','income') NOT NULL DEFAULT 'expense',
+          pattern VARCHAR(100) NOT NULL,
+          category VARCHAR(100) NOT NULL,
+          priority INT NOT NULL DEFAULT 0,
+          active BOOLEAN NOT NULL DEFAULT TRUE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS notification_preferences (
+          user_id VARCHAR(36) PRIMARY KEY,
+          email VARCHAR(254) NULL,
+          email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+          bill_days INT NOT NULL DEFAULT 3,
+          budget_threshold INT NOT NULL DEFAULT 80,
+          debt_days INT NOT NULL DEFAULT 7,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          type VARCHAR(30) NOT NULL,
+          title VARCHAR(150) NOT NULL,
+          message TEXT NOT NULL,
+          dedupe_key VARCHAR(190) NOT NULL,
+          read_at DATETIME NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_notification_user_key (user_id, dedupe_key),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS receipts (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          expense_id VARCHAR(36) NOT NULL,
+          original_name VARCHAR(255) NOT NULL,
+          stored_name VARCHAR(100) NOT NULL,
+          mime_type VARCHAR(100) NOT NULL,
+          size INT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS activity_log (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          action VARCHAR(30) NOT NULL,
+          entity_type VARCHAR(50) NOT NULL,
+          entity_id VARCHAR(36) NULL,
+          summary VARCHAR(255) NOT NULL,
+          payload JSON NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS trashed_records (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          table_name VARCHAR(50) NOT NULL,
+          record_id VARCHAR(36) NOT NULL,
+          payload JSON NOT NULL,
+          deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          expires_at DATETIME NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      await addIndex(connection, 'net_worth_items', 'idx_net_worth_user_date', 'user_id, as_of_date');
+      await addIndex(connection, 'debts', 'idx_debts_user_status_due', 'user_id, status, due_date');
+      await addIndex(connection, 'categorization_rules', 'idx_rules_user_type', 'user_id, transaction_type, priority');
+      await addIndex(connection, 'notifications', 'idx_notifications_user_read', 'user_id, read_at, created_at');
+      await addIndex(connection, 'activity_log', 'idx_activity_user_created', 'user_id, created_at');
+      await addIndex(connection, 'trashed_records', 'idx_trash_user_expiry', 'user_id, expires_at');
+    },
+  },
+  {
+    id: '006_receipt_trash_support',
+    up: async (connection) => {
+      if (!(await columnExists(connection, 'receipts', 'expense_record_id'))) {
+        await connection.query(
+          'ALTER TABLE receipts ADD COLUMN expense_record_id VARCHAR(36) NULL AFTER expense_id',
+        );
+      }
+      await connection.query(
+        'UPDATE receipts SET expense_record_id = expense_id WHERE expense_record_id IS NULL',
+      );
+      await connection.query(
+        'ALTER TABLE receipts MODIFY expense_record_id VARCHAR(36) NOT NULL',
+      );
+
+      const [foreignKeys] = await connection.query(
+        `SELECT CONSTRAINT_NAME
+         FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'receipts'
+           AND COLUMN_NAME = 'expense_id'
+           AND REFERENCED_TABLE_NAME = 'expenses'`,
+      );
+      for (const foreignKey of foreignKeys) {
+        const constraint = String(foreignKey.CONSTRAINT_NAME).replaceAll('`', '``');
+        await connection.query(`ALTER TABLE receipts DROP FOREIGN KEY \`${constraint}\``);
+      }
+      await connection.query('ALTER TABLE receipts MODIFY expense_id VARCHAR(36) NULL');
+      await connection.query(
+        `ALTER TABLE receipts
+         ADD CONSTRAINT fk_receipts_expense
+         FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE SET NULL`,
+      );
+      await addIndex(
+        connection,
+        'receipts',
+        'idx_receipts_user_record',
+        'user_id, expense_record_id',
+      );
+    },
+  },
 ];
 
 async function runMigrations(connection) {
