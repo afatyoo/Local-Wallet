@@ -349,7 +349,12 @@ export const planningApi = {
     apiRequest<{ success: true }>(`/planning/receipts/${id}`, { method: 'DELETE' }),
 };
 
+export const MAX_RECEIPT_SIZE = 5 * 1024 * 1024;
+
 export async function uploadExpenseReceipt(expenseId: string, file: File) {
+  if (file.size > MAX_RECEIPT_SIZE) {
+    throw new Error('Receipt is too large. Maximum file size is 5 MB.');
+  }
   const body = new FormData();
   body.append('receipt', file);
   const headers: Record<string, string> = {};
@@ -362,6 +367,9 @@ export async function uploadExpenseReceipt(expenseId: string, file: File) {
     body,
   });
   if (!response.ok) {
+    if (response.status === 413) {
+      throw new Error('Receipt is too large. Maximum file size is 5 MB.');
+    }
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || 'Receipt upload failed');
   }
