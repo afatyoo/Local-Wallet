@@ -38,6 +38,7 @@ import { Expense } from '@/stores/financeStore';
 import {
   downloadReceipt,
   fetchReceiptBlob,
+  MAX_RECEIPT_SIZE,
   planningApi,
   uploadExpenseReceipt,
 } from '@/lib/api';
@@ -296,7 +297,7 @@ export default function ExpensePage() {
       return;
     }
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!allowed.includes(file.type) || file.size > 5 * 1024 * 1024) {
+    if (!allowed.includes(file.type) || file.size > MAX_RECEIPT_SIZE) {
       clearPendingReceipt();
       toast({
         title: t('common_error'),
