@@ -63,6 +63,21 @@ export interface TfaChallengeResponse {
   challenge: string;
 }
 
+export interface ApiSession {
+  id: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  current: boolean;
+}
+
+export interface InitialSetupResponse {
+  user: AuthenticatedUserResponse;
+  recoveryCodes: string[];
+}
+
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
@@ -142,6 +157,19 @@ export const authApi = {
       method: 'POST',
     }, { logoutOnUnauthorized: false }),
 
+  getSessions: () =>
+    apiRequest<ApiSession[]>('/auth/sessions'),
+
+  revokeSession: (sessionId: string) =>
+    apiRequest<{ success: true; currentSessionRevoked: boolean }>(`/auth/sessions/${sessionId}`, {
+      method: 'DELETE',
+    }),
+
+  revokeOtherSessions: () =>
+    apiRequest<{ success: true }>('/auth/sessions', {
+      method: 'DELETE',
+    }),
+
   getTfaStatus: () =>
     apiRequest<{ enabled: boolean; recoveryCodesRemaining: number }>('/auth/tfa/status'),
 
@@ -161,6 +189,28 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ password, code }),
     }),
+};
+
+export const setupApi = {
+  getStatus: () =>
+    apiRequest<{ required: boolean }>('/setup/status', {}, { logoutOnUnauthorized: false }),
+
+  startTfa: (username: string) =>
+    apiRequest<{ setupToken: string; secret: string; otpAuthUri: string }>('/setup/tfa', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    }, { logoutOnUnauthorized: false }),
+
+  complete: (payload: {
+    username: string;
+    password: string;
+    setupToken: string;
+    code: string;
+  }) =>
+    apiRequest<InitialSetupResponse>('/setup/complete', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }, { logoutOnUnauthorized: false }),
 };
 
 // Generic CRUD API factory

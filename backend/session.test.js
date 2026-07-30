@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { createSessionAuth, revokeUserSessions } from './session.js';
+import {
+  createSessionAuth,
+  listUserSessions,
+  revokeSession,
+  revokeUserSessions,
+} from './session.js';
 
 function hash(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -71,4 +76,35 @@ test('revoking sessions can preserve the current session', async () => {
   );
   assert.match(calls[0][0], /id <> \?/);
   assert.deepEqual(calls[0][1], ['user-1', 'session-1']);
+});
+
+test('session listing identifies the current device without exposing tokens', async () => {
+  const rows = [{
+    id: 'session-1',
+    ip_address: '127.0.0.1',
+    user_agent: 'Test browser',
+    created_at: '2026-01-01',
+    last_seen_at: '2026-01-02',
+    expires_at: '2026-01-08',
+  }];
+  const sessions = await listUserSessions(
+    { query: async () => [rows, []] },
+    'user-1',
+    'session-1',
+  );
+  assert.equal(sessions[0].current, true);
+  assert.equal(sessions[0].userAgent, 'Test browser');
+  assert.equal('tokenHash' in sessions[0], false);
+});
+
+test('a user can only revoke a session that belongs to their account', async () => {
+  const calls = [];
+  const revoked = await revokeSession({
+    query: async (...args) => {
+      calls.push(args);
+      return [{ affectedRows: 1 }, []];
+    },
+  }, 'user-1', 'session-2');
+  assert.equal(revoked, true);
+  assert.deepEqual(calls[0][1], ['session-2', 'user-1']);
 });

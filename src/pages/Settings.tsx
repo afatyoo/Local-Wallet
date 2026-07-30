@@ -8,6 +8,7 @@ import { useTranslation, languages } from '@/lib/i18n';
 import { decryptBackup, encryptBackup } from '@/lib/backupCrypto';
 import { AppLayout } from '@/components/AppLayout';
 import { TwoFactorSettings } from '@/components/TwoFactorSettings';
+import { SessionManagement } from '@/components/SessionManagement';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -31,6 +32,7 @@ import {
   Coins,
   Clock,
   LockKeyhole,
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -46,7 +48,14 @@ export default function SettingsPage() {
   const { exportData, importData, loadAllData } = useFinanceStore();
   const { theme, toggleTheme } = useTheme();
   const { t, language, setLanguage } = useTranslation();
-  const { getLocalBackupInfo, restoreFromLocalStorage, updateLastBackupDate } = useBackup();
+  const {
+    getLocalBackupInfo,
+    restoreFromLocalStorage,
+    enableLocalBackup,
+    unlockLocalBackup,
+    disableLocalBackup,
+    updateLastBackupDate,
+  } = useBackup();
   const displayCurrency = useCurrencyStore((s) => s.displayCurrency);
   const setDisplayCurrency = useCurrencyStore((s) => s.setDisplayCurrency);
   const lastRatesUpdated = useCurrencyStore((s) => s.lastUpdated);
@@ -62,6 +71,8 @@ export default function SettingsPage() {
   const [encryptExport, setEncryptExport] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
   const [importPassword, setImportPassword] = useState('');
+  const [localBackupPassword, setLocalBackupPassword] = useState('');
+  const [isConfiguringLocalBackup, setIsConfiguringLocalBackup] = useState(false);
 
   const localBackupInfo = getLocalBackupInfo();
 
@@ -108,6 +119,34 @@ export default function SettingsPage() {
     setIsRestoring(true);
     const success = await restoreFromLocalStorage();
     setIsRestoring(false);
+  };
+
+  const handleConfigureLocalBackup = async () => {
+    setIsConfiguringLocalBackup(true);
+    const success = localBackupInfo.hasBackup
+      ? await unlockLocalBackup(localBackupPassword)
+      : await enableLocalBackup(localBackupPassword);
+    setIsConfiguringLocalBackup(false);
+    if (success) {
+      setLocalBackupPassword('');
+      toast({
+        title: t('common_success'),
+        description: t(localBackupInfo.hasBackup ? 'backup_local_unlocked' : 'backup_local_enabled'),
+      });
+    } else {
+      toast({
+        title: t('common_error'),
+        description: t('backup_local_password_error'),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDisableLocalBackup = () => {
+    if (!confirm(t('backup_local_disable_confirm'))) return;
+    disableLocalBackup();
+    setLocalBackupPassword('');
+    toast({ title: t('common_success'), description: t('backup_local_disabled') });
   };
 
   const handleImportClick = () => {
@@ -180,6 +219,8 @@ export default function SettingsPage() {
         </div>
 
         <TwoFactorSettings />
+
+        <SessionManagement />
 
         {/* Language Selector */}
         <Card className="glass-card">
@@ -451,6 +492,40 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {(!localBackupInfo.hasBackup || localBackupInfo.locked) && (
+              <div className="space-y-3">
+                <Label htmlFor="local-backup-password">
+                  {localBackupInfo.hasBackup
+                    ? t('backup_local_unlock_password')
+                    : t('backup_local_create_password')}
+                </Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="relative flex-1">
+                    <LockKeyhole className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="local-backup-password"
+                      type="password"
+                      autoComplete="off"
+                      minLength={12}
+                      value={localBackupPassword}
+                      onChange={(event) => setLocalBackupPassword(event.target.value)}
+                      className="pl-9"
+                      placeholder={t('backup_local_password_hint')}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => void handleConfigureLocalBackup()}
+                    disabled={localBackupPassword.length < 12 || isConfiguringLocalBackup}
+                  >
+                    {isConfiguringLocalBackup && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {localBackupInfo.hasBackup
+                      ? t('backup_local_unlock')
+                      : t('backup_local_enable')}
+                  </Button>
+                </div>
+              </div>
+            )}
             {localBackupInfo.hasBackup ? (
               <div className="flex items-center justify-between p-4 rounded-lg bg-income/10 border border-income/20">
                 <div>
@@ -458,21 +533,35 @@ export default function SettingsPage() {
                   <p className="text-sm text-muted-foreground">
                     {localBackupInfo.backupDate?.toLocaleString()}
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    {localBackupInfo.locked ? t('backup_local_locked') : t('backup_local_unlocked_status')}
+                  </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRestoreFromLocal}
-                  disabled={isRestoring}
-                  className="gap-2"
-                >
-                  {isRestoring ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                  {t('backup_restore_local')}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRestoreFromLocal}
+                    disabled={isRestoring || localBackupInfo.locked}
+                    className="gap-2"
+                  >
+                    {isRestoring ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    {t('backup_restore_local')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleDisableLocalBackup}
+                    title={t('backup_local_disable')}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="p-4 rounded-lg bg-secondary/30">
@@ -504,7 +593,7 @@ export default function SettingsPage() {
                   <CheckCircle className="w-4 h-4 text-income" />
                   Session &amp; local backup
                 </div>
-                <p className="font-medium">HttpOnly cookie &amp; per-user LocalStorage</p>
+                <p className="font-medium">HttpOnly cookie &amp; encrypted local backup</p>
               </div>
             </div>
 

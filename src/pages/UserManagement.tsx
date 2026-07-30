@@ -177,10 +177,11 @@ export default function UserManagementPage() {
       return;
     }
 
-    const hasMinLength = registerPassword.length >= 6;
+    const hasMinLength = registerPassword.length >= 12;
+    const hasLowercase = /[a-z]/.test(registerPassword);
     const hasUppercase = /[A-Z]/.test(registerPassword);
     const hasNumber = /[0-9]/.test(registerPassword);
-    const isPasswordValid = hasMinLength && hasUppercase && hasNumber;
+    const isPasswordValid = hasMinLength && hasLowercase && hasUppercase && hasNumber;
 
     if (!isPasswordValid) {
       toast({
@@ -234,10 +235,19 @@ export default function UserManagementPage() {
       return;
     }
 
-    if (newPassword.length < 6) {
+    if (newPassword.length < 12) {
       toast({
         title: 'Error',
-        description: 'Password must be at least 6 characters',
+        description: 'Password must be at least 12 characters',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!/[a-z]/.test(newPassword)) {
+      toast({
+        title: 'Error',
+        description: 'Password must contain a lowercase letter',
         variant: 'destructive',
       });
       return;
@@ -513,7 +523,8 @@ export default function UserManagementPage() {
                     </div>
                     <div className="space-y-1 mt-2">
                       {[
-                        { key: 'hasMinLength', label: 'At least 6 characters', test: registerPassword.length >= 6 },
+                        { key: 'hasMinLength', label: 'At least 12 characters', test: registerPassword.length >= 12 },
+                        { key: 'hasLowercase', label: 'Contains lowercase letter', test: /[a-z]/.test(registerPassword) },
                         { key: 'hasUppercase', label: 'Contains uppercase letter', test: /[A-Z]/.test(registerPassword) },
                         { key: 'hasNumber', label: 'Contains number', test: /[0-9]/.test(registerPassword) },
                       ].map((req) => (
@@ -618,7 +629,8 @@ export default function UserManagementPage() {
                     </div>
                     <div className="space-y-1 mt-2">
                       {[
-                        { key: 'hasMinLength', label: 'At least 6 characters', test: newPassword.length >= 6 },
+                        { key: 'hasMinLength', label: 'At least 12 characters', test: newPassword.length >= 12 },
+                        { key: 'hasLowercase', label: 'Contains lowercase letter', test: /[a-z]/.test(newPassword) },
                         { key: 'hasUppercase', label: 'Contains uppercase letter', test: /[A-Z]/.test(newPassword) },
                         { key: 'hasNumber', label: 'Contains number', test: /[0-9]/.test(newPassword) },
                       ].map((req) => (

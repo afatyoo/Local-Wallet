@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.7.10] — 2026-07-30
+
+### Added
+- **Secure first-run setup**: Fresh databases open an owner setup wizard instead of creating a default administrator.
+- **Mandatory owner TFA**: Initial setup requires authenticator verification and issues eight one-time recovery codes.
+- **Session management**: Users can review active devices and revoke individual or other sessions from Settings.
+- **Encrypted local backups**: Browser backups are protected with a user-supplied password held only in memory.
+
+### Changed
+- **Stronger credentials**: Passwords require at least 12 characters with lowercase, uppercase, and numeric characters; bcrypt cost is configurable.
+- **Hardened sessions**: Sessions enforce idle expiry, daily token rotation, a short previous-token grace period, and current database roles.
+- **Container isolation**: The backend runs as a fixed non-root user with a read-only filesystem, dropped capabilities, and restricted writable mounts.
+- **Secret injection**: Sensitive configuration supports Docker-style `_FILE` variables.
+
+### Security
+- **Durable authentication limits**: Login and setup throttling is stored in MySQL and keyed by endpoint, account, and client IP.
+- **Upload content verification**: Receipt uploads validate JPEG, PNG, WebP, and PDF signatures instead of trusting filenames or MIME headers.
+- **Browser policy hardening**: Nginx now applies a restricted Content Security Policy and preserves forwarded HTTPS information for secure cookies.
+- **Dependency audit**: Frontend and backend production dependency audits report zero known vulnerabilities.
+
+### Fixed
+- **Runtime locale fallback**: Curated Indonesian and English strings remain available when a stale runtime locale file is mounted.
+
+---
+
 ## [1.7.1] — 2026-07-29
 
 ### Added

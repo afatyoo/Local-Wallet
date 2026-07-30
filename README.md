@@ -92,6 +92,9 @@ MYSQL_USER=finance_user
 MYSQL_PASSWORD=change_me_password
 JWT_SECRET=generate_a_long_random_value
 TFA_ENCRYPTION_KEY=generate_a_different_long_random_value
+COOKIE_SECURE=
+BCRYPT_ROUNDS=12
+SESSION_IDLE_TIMEOUT_MINUTES=30
 ```
 
 3) Run:
@@ -106,6 +109,10 @@ docker compose up -d --build
 - Backend health: http://localhost:3000/api/health
 
 > Note: In Docker, the frontend uses `VITE_API_URL=/api` and Nginx proxies `/api/*` to the backend container.
+>
+> On a fresh database, the first page is a one-time setup wizard. It creates the
+> first administrator, enforces the password policy, requires TFA verification,
+> and issues recovery codes. No default username or password is created.
 
 ### Email notifications (optional)
 
@@ -233,11 +240,16 @@ Frontend runs on: `http://localhost:5173`
 ## 🔐 Notes / Security
 
 - Passwords are **hashed** (bcrypt) before being stored.
+- New passwords require at least 12 characters with uppercase, lowercase, and numeric characters.
+- Fresh installations have no default credentials; the first administrator and mandatory TFA are created through the one-time setup wizard.
 - TOTP secrets are encrypted with AES-256-GCM and recovery codes are stored only as keyed hashes.
+- `TFA_ENCRYPTION_KEY` is required and must be different from `JWT_SECRET`.
 - Login TFA challenges expire after five minutes and cannot be used as API access tokens.
-- Login sessions are opaque, revocable, stored in MySQL, and sent through `HttpOnly` cookies.
+- Login sessions are opaque, revocable per device, stored in MySQL, rotated daily, and expire after 30 idle minutes.
+- Leave `COOKIE_SECURE` empty to derive it from `X-Forwarded-Proto`, or force it to `true` on HTTPS-only deployments.
 - Authenticated write requests use a per-session CSRF token.
 - JSON restore is validated and committed atomically; encrypted backup files use password-derived AES-256-GCM.
+- Browser backups require a password and are never stored as plaintext.
 - For production: change DB passwords, and run behind HTTPS (reverse proxy like Nginx/Caddy/Traefik).
 - CORS is restricted through `ALLOWED_ORIGINS`.
 
