@@ -3,16 +3,21 @@ import { useAuthStore } from '@/stores/authStore';
 import { useFinanceStore } from '@/stores/financeStore';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
+import { decryptBackup, encryptBackup, isEncryptedBackup } from '@/lib/backupCrypto';
 
 const backupKey = (userId: string) => `finance_backup_data:${userId}`;
 const backupDateKey = (userId: string) => `finance_backup_date:${userId}`;
 const lastBackupKey = (userId: string) => `finance_last_backup:${userId}`;
 const REMINDER_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 const autoSaveInFlight = new Map<string, Promise<void>>();
+const localBackupPasswords = new Map<string, string>();
 
-function saveBackupToLocalStorage(userId: string, jsonData: string) {
-  localStorage.setItem(backupKey(userId), jsonData);
+async function saveBackupToLocalStorage(userId: string, jsonData: string) {
+  const password = localBackupPasswords.get(userId);
+  if (!password) return false;
+  localStorage.setItem(backupKey(userId), await encryptBackup(jsonData, password));
   localStorage.setItem(backupDateKey(userId), new Date().toISOString());
+  return true;
 }
 
 export function useBackup() {
@@ -43,7 +48,7 @@ export function useBackup() {
     const operation = (async () => {
       try {
         const jsonData = await exportData(user.id);
-        saveBackupToLocalStorage(user.id, jsonData);
+        await saveBackupToLocalStorage(user.id, jsonData);
       } catch (error) {
         console.error('Auto-save to localStorage failed:', error);
       } finally {
@@ -74,7 +79,7 @@ export function useBackup() {
       updateLastBackupDate();
 
       // Reuse the same export instead of issuing another set of API requests.
-      saveBackupToLocalStorage(user.id, jsonData);
+      await saveBackupToLocalStorage(user.id, jsonData);
 
       toast({
         title: t('common_success'),
@@ -107,7 +112,17 @@ export function useBackup() {
     }
 
     try {
-      const success = await importData(user.id, backupData);
+      const password = localBackupPasswords.get(user.id);
+      if (!password) {
+        toast({
+          title: t('common_warning'),
+          description: t('backup_local_locked_error'),
+          variant: 'destructive',
+        });
+        return false;
+      }
+      const decrypted = await decryptBackup(backupData, password);
+      const success = await importData(user.id, decrypted);
       if (success) {
         await loadAllData(user.id);
         toast({
@@ -140,14 +155,54 @@ export function useBackup() {
 
   // Get local backup info
   const getLocalBackupInfo = useCallback(() => {
-    if (!user?.id) return { hasBackup: false, backupDate: null };
+    if (!user?.id) return { hasBackup: false, backupDate: null, locked: false };
+    const storedBackup = localStorage.getItem(backupKey(user.id));
+    if (storedBackup && !isEncryptedBackup(storedBackup)) {
+      localStorage.removeItem(backupKey(user.id));
+      localStorage.removeItem(backupDateKey(user.id));
+      return { hasBackup: false, backupDate: null, locked: false };
+    }
     const backupDate = localStorage.getItem(backupDateKey(user.id));
-    const hasBackup = localStorage.getItem(backupKey(user.id)) !== null;
+    const hasBackup = storedBackup !== null;
     
     return {
       hasBackup,
       backupDate: backupDate ? new Date(backupDate) : null,
+      locked: hasBackup && !localBackupPasswords.has(user.id),
     };
+  }, [user?.id]);
+
+  const enableLocalBackup = useCallback(async (password: string) => {
+    if (!user?.id || password.length < 12) return false;
+    try {
+      localBackupPasswords.set(user.id, password);
+      const jsonData = await exportData(user.id);
+      await saveBackupToLocalStorage(user.id, jsonData);
+      return true;
+    } catch {
+      localBackupPasswords.delete(user.id);
+      return false;
+    }
+  }, [user?.id, exportData]);
+
+  const unlockLocalBackup = useCallback(async (password: string) => {
+    if (!user?.id) return false;
+    const backupData = localStorage.getItem(backupKey(user.id));
+    if (!backupData || !isEncryptedBackup(backupData)) return false;
+    try {
+      await decryptBackup(backupData, password);
+      localBackupPasswords.set(user.id, password);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [user?.id]);
+
+  const disableLocalBackup = useCallback(() => {
+    if (!user?.id) return;
+    localBackupPasswords.delete(user.id);
+    localStorage.removeItem(backupKey(user.id));
+    localStorage.removeItem(backupDateKey(user.id));
   }, [user?.id]);
 
   return {
@@ -157,6 +212,9 @@ export function useBackup() {
     checkBackupReminder,
     getLastBackupDate,
     getLocalBackupInfo,
+    enableLocalBackup,
+    unlockLocalBackup,
+    disableLocalBackup,
     updateLastBackupDate,
   };
 }

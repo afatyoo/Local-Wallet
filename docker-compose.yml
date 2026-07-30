@@ -31,7 +31,7 @@ services:
     image: node:20-alpine
     working_dir: /app
     volumes:
-      - ./:/app
+      - ./:/app:ro
       - locales_data:/usr/share/nginx/html/locales
     environment:
       BASE_FILE: /app/src/locales/id.json
@@ -44,6 +44,11 @@ services:
       libretranslate:
         condition: service_healthy
     command: ["node", "scripts/i18n-bootstrap.mjs"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     restart: "no"
 
 
@@ -53,7 +58,7 @@ services:
     image: node:20-alpine
     working_dir: /app
     volumes:
-      - ./:/app
+      - ./:/app:ro
       - locales_data:/usr/share/nginx/html/locales
     environment:
       BASE_FILE: /app/src/locales/id.json
@@ -68,6 +73,11 @@ services:
       i18n_bootstrap:
         condition: service_completed_successfully
     command: ["node", "scripts/i18n-watcher.mjs"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 
@@ -109,38 +119,69 @@ services:
       FLUSH PRIVILEGES;\""
     restart: "no"
 
+  uploads_init:
+    image: alpine:3.22
+    command: ["sh", "-c", "chown -R 10001:10001 /uploads && chmod 750 /uploads"]
+    volumes:
+      - receipts_data:/uploads
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     environment:
       PORT: "3001"
+      NODE_ENV: production
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_PASSWORD_FILE: ${MYSQL_PASSWORD_FILE:-}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET_FILE: ${JWT_SECRET_FILE:-}
       TFA_ENCRYPTION_KEY: ${TFA_ENCRYPTION_KEY:-}
+      TFA_ENCRYPTION_KEY_FILE: ${TFA_ENCRYPTION_KEY_FILE:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
       GLOBAL_RATE_LIMIT_MAX: ${GLOBAL_RATE_LIMIT_MAX:-1000}
       AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-30}
       RECEIPT_DIR: /app/uploads
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_PASSWORD_FILE: ${SMTP_PASSWORD_FILE:-}
       SMTP_FROM: ${SMTP_FROM:-}
       APP_URL: ${APP_URL:-http://localhost:3000}
       NOTIFICATION_SCAN_INTERVAL_MS: ${NOTIFICATION_SCAN_INTERVAL_MS:-21600000}
     volumes:
       - receipts_data:/app/uploads
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:
       db_init:
+        condition: service_completed_successfully
+      uploads_init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]

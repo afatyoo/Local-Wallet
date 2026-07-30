@@ -1,6 +1,3 @@
-import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
-
 async function columnExists(connection, table, column) {
   const [rows] = await connection.query(
     `SELECT 1
@@ -374,6 +371,32 @@ const migrations = [
       );
     },
   },
+  {
+    id: '007_security_hardening',
+    up: async (connection) => {
+      const sessionColumns = [
+        ['last_seen_at', 'ALTER TABLE sessions ADD COLUMN last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER created_at'],
+        ['rotated_at', 'ALTER TABLE sessions ADD COLUMN rotated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER last_seen_at'],
+        ['previous_token_hash', 'ALTER TABLE sessions ADD COLUMN previous_token_hash CHAR(64) NULL AFTER token_hash'],
+        ['previous_token_expires_at', 'ALTER TABLE sessions ADD COLUMN previous_token_expires_at DATETIME NULL AFTER previous_token_hash'],
+      ];
+      for (const [column, sql] of sessionColumns) {
+        if (!(await columnExists(connection, 'sessions', column))) {
+          await connection.query(sql);
+        }
+      }
+      await addIndex(connection, 'sessions', 'idx_sessions_previous_token', 'previous_token_hash');
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS auth_rate_limits (
+          key_hash CHAR(64) PRIMARY KEY,
+          attempts INT UNSIGNED NOT NULL DEFAULT 0,
+          expires_at DATETIME NOT NULL,
+          INDEX idx_auth_rate_expiry (expires_at)
+        )
+      `);
+      await connection.query('DELETE FROM auth_rate_limits WHERE expires_at <= NOW()');
+    },
+  },
 ];
 
 async function runMigrations(connection) {
@@ -394,33 +417,10 @@ async function runMigrations(connection) {
   }
 }
 
-async function ensureDefaultAdmin(connection) {
-  const [existingAdmin] = await connection.query(
-    'SELECT id, role FROM users WHERE username = ?',
-    ['admin'],
-  );
-  if (existingAdmin.length === 0) {
-    const adminHash = await bcrypt.hash('admin', 10);
-    await connection.query(
-      'INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)',
-      [uuidv4(), 'admin', adminHash, 'admin'],
-    );
-    console.log('Default admin user created (username: admin, password: admin)');
-  } else if (existingAdmin[0].role !== 'admin') {
-    const adminHash = await bcrypt.hash('admin', 10);
-    await connection.query(
-      'UPDATE users SET role = ?, password_hash = ? WHERE username = ?',
-      ['admin', adminHash, 'admin'],
-    );
-    console.log('Existing admin user promoted to admin role with default password');
-  }
-}
-
 export async function initializeDatabase(pool) {
   const connection = await pool.getConnection();
   try {
     await runMigrations(connection);
-    await ensureDefaultAdmin(connection);
     console.log('Database initialized successfully');
   } finally {
     connection.release();

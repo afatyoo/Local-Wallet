@@ -4,6 +4,8 @@ import nodemailer from 'nodemailer';
 import { mkdirSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
+import { hasValidFileSignature, RECEIPT_EXTENSIONS } from '../fileValidation.js';
+import { readSecret } from '../config.js';
 
 const UPLOAD_DIR = process.env.RECEIPT_DIR || '/app/uploads';
 const RESTORABLE_TABLES = new Set([
@@ -17,7 +19,7 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
     filename: (_req, file, callback) => {
-      callback(null, `${uuidv4()}${path.extname(file.originalname).toLowerCase()}`);
+      callback(null, `${uuidv4()}${RECEIPT_EXTENSIONS[file.mimetype] || ''}`);
     },
   }),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
@@ -92,7 +94,7 @@ function createMailer() {
     port: Number(process.env.SMTP_PORT || 587),
     secure: process.env.SMTP_SECURE === 'true',
     auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
+      ? { user: process.env.SMTP_USER, pass: readSecret('SMTP_PASSWORD') }
       : undefined,
     disableFileAccess: true,
     disableUrlAccess: true,
@@ -529,6 +531,10 @@ export function createPlanningRouter({ pool, authenticate }) {
 
   router.post('/expenses/:id/receipts', upload.single('receipt'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Receipt file is required' });
+    if (!(await hasValidFileSignature(req.file.path, req.file.mimetype))) {
+      unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Receipt file content does not match its declared type' });
+    }
     const [expenses] = await pool.query('SELECT id FROM expenses WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
     if (!expenses.length) {
       unlinkSync(req.file.path);

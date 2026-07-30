@@ -8,17 +8,23 @@ import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import { readSecret } from './config.js';
 import { pool } from './db.js';
 import { initializeDatabase } from './migrations.js';
 import {
   createSession,
   createSessionAuth,
   destroyCurrentSession,
+  listUserSessions,
+  revokeSession,
   revokeUserSessions,
 } from './session.js';
+import { bcryptRounds, validatePassword } from './passwordPolicy.js';
+import { authRateLimitKey, MySqlRateLimitStore } from './rateLimitStore.js';
 import { createBackupRouter } from './routes/backup.js';
 import { createCrudRouter } from './routes/crud.js';
 import { createPlanningRouter, startNotificationWorker } from './routes/planning.js';
+import { createSetupRouter } from './routes/setup.js';
 import {
   createOtpAuthUri,
   decryptTotpSecret,
@@ -36,14 +42,19 @@ const RECEIPT_DIR = process.env.RECEIPT_DIR || '/app/uploads';
 // -------------------------
 // Security: JWT_SECRET must be set
 // -------------------------
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = readSecret('JWT_SECRET');
 if (!JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start.');
   process.exit(1);
 }
-const TFA_ENCRYPTION_KEY = process.env.TFA_ENCRYPTION_KEY || JWT_SECRET;
-if (!process.env.TFA_ENCRYPTION_KEY) {
-  console.warn('TFA_ENCRYPTION_KEY is not set; falling back to JWT_SECRET.');
+const TFA_ENCRYPTION_KEY = readSecret('TFA_ENCRYPTION_KEY');
+if (!TFA_ENCRYPTION_KEY) {
+  console.error('FATAL: TFA_ENCRYPTION_KEY is not set. Refusing to start.');
+  process.exit(1);
+}
+if (TFA_ENCRYPTION_KEY === JWT_SECRET) {
+  console.error('FATAL: TFA_ENCRYPTION_KEY must be different from JWT_SECRET.');
+  process.exit(1);
 }
 
 const app = express();
@@ -98,6 +109,9 @@ const authLimiter = rateLimit({
   max: positiveIntegerEnv('AUTH_RATE_LIMIT_MAX', 10),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: authRateLimitKey,
+  store: new MySqlRateLimitStore(pool),
+  skipSuccessfulRequests: true,
   message: { error: 'Too many authentication attempts, please try again later' },
 });
 
@@ -148,6 +162,13 @@ function verifySecondFactor(user, code) {
   return { valid: recoveryIndex >= 0, recoveryIndex };
 }
 
+app.use('/api/setup', createSetupRouter({
+  pool,
+  jwtSecret: JWT_SECRET,
+  tfaEncryptionKey: TFA_ENCRYPTION_KEY,
+  limiter: authLimiter,
+}));
+
 app.post('/api/auth/register', authLimiter, authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const { username, password } = req.body || {};
@@ -164,13 +185,12 @@ app.post('/api/auth/register', authLimiter, authenticateToken, authorizeAdmin, a
     }
 
     // Validate password strength
-    if (typeof password !== 'string' || password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ error: passwordError });
 
     const role = 'user';
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, bcryptRounds());
     const id = uuidv4();
 
     await pool.query(
@@ -241,7 +261,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       const challenge = jwt.sign(
         { purpose: 'tfa-login', id: user.id },
         JWT_SECRET,
-        { expiresIn: '5m' }
+        { algorithm: 'HS256', audience: 'local-wallet', issuer: 'local-wallet-api', expiresIn: '5m' }
       );
       return res.status(202).json({ requiresTwoFactor: true, challenge });
     }
@@ -263,7 +283,11 @@ app.post('/api/auth/tfa/verify-login', authLimiter, async (req, res) => {
 
     let payload;
     try {
-      payload = jwt.verify(challenge, JWT_SECRET);
+      payload = jwt.verify(challenge, JWT_SECRET, {
+        algorithms: ['HS256'],
+        audience: 'local-wallet',
+        issuer: 'local-wallet-api',
+      });
     } catch {
       return res.status(401).json({ error: 'TFA challenge expired or invalid' });
     }
@@ -326,6 +350,40 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/api/auth/sessions', authenticateToken, async (req, res) => {
+  try {
+    res.json(await listUserSessions(pool, req.user.id, req.session.id));
+  } catch (error) {
+    console.error('List sessions error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/auth/sessions/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.params.id === req.session.id) {
+      await destroyCurrentSession(pool, req, res);
+      return res.json({ success: true, currentSessionRevoked: true });
+    }
+    const revoked = await revokeSession(pool, req.user.id, req.params.id);
+    if (!revoked) return res.status(404).json({ error: 'Session not found' });
+    return res.json({ success: true, currentSessionRevoked: false });
+  } catch (error) {
+    console.error('Revoke session error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/auth/sessions', authenticateToken, async (req, res) => {
+  try {
+    await revokeUserSessions(pool, req.user.id, req.session.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Revoke other sessions error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/api/auth/tfa/status', authenticateToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -357,7 +415,7 @@ app.post('/api/auth/tfa/setup', authenticateToken, async (req, res) => {
     const setupToken = jwt.sign(
       { purpose: 'tfa-setup', id: req.user.id, secret },
       JWT_SECRET,
-      { expiresIn: '10m' }
+      { algorithm: 'HS256', audience: 'local-wallet', issuer: 'local-wallet-api', expiresIn: '10m' }
     );
     res.json({
       setupToken,
@@ -379,7 +437,11 @@ app.post('/api/auth/tfa/confirm', authenticateToken, async (req, res) => {
 
     let payload;
     try {
-      payload = jwt.verify(setupToken, JWT_SECRET);
+      payload = jwt.verify(setupToken, JWT_SECRET, {
+        algorithms: ['HS256'],
+        audience: 'local-wallet',
+        issuer: 'local-wallet-api',
+      });
     } catch {
       return res.status(400).json({ error: 'TFA setup expired; start again' });
     }
@@ -575,19 +637,10 @@ app.put('/api/users/:id/password', authenticateToken, authorizeAdmin, async (req
     }
 
     // Validate password strength
-    if (typeof password !== 'string' || password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ error: passwordError });
 
-    if (!/[A-Z]/.test(password)) {
-      return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
-    }
-
-    if (!/[0-9]/.test(password)) {
-      return res.status(400).json({ error: 'Password must contain at least one number' });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, bcryptRounds());
     const [result] = await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
 
     if (result.affectedRows === 0) {

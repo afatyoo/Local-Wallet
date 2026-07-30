@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import idFallback from '../locales/id.json';
+import enFallback from '../locales/en.json';
 
 /**
  * i18n (runtime)
@@ -26,6 +27,7 @@ type Dictionary = Record<string, string>;
 // In-memory cache. Always has at least Indonesian fallback.
 const cache: Record<string, Dictionary> = {
   id: (idFallback as unknown as Dictionary) ?? {},
+  en: (enFallback as unknown as Dictionary) ?? {},
 };
 
 // Prevent request-storms when many components mount and call `useTranslation()`.
@@ -67,7 +69,7 @@ async function loadLocale(lang: Language, opts?: { force?: boolean }): Promise<b
     attempted[lang] = true;
 
     if (data && Object.keys(data).length) {
-      cache[lang] = data;
+      cache[lang] = { ...(cache[lang] || {}), ...data };
       return true;
     }
     return false;

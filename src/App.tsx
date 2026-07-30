@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "@/lib/router";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { SessionGate } from "@/components/SessionGate";
+import { InitialSetupGate } from "@/components/InitialSetupGate";
 const Login = lazy(() => import("./pages/Login"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const IncomePage = lazy(() => import("./pages/Income"));
@@ -31,8 +32,9 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <SessionGate>
-        <BrowserRouter>
+      <InitialSetupGate>
+        <SessionGate>
+          <BrowserRouter>
           <Suspense fallback={<div className="min-h-screen bg-background" aria-busy="true" />}>
             <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -55,8 +57,9 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
-        </BrowserRouter>
-      </SessionGate>
+          </BrowserRouter>
+        </SessionGate>
+      </InitialSetupGate>
     </TooltipProvider>
   </QueryClientProvider>
 );
